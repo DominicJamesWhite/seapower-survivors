@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Builds against the installed game, the way the Workshop code mods do.
+    Override the install location with -p:SeaPowerDir=... if it moves.
+    AnchorChain loads every DLL in the mod folder, so references are never
+    copied: only our own assembly ships.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>11.0</LangVersion>
+    <AssemblyName>SeapowerSurvivors</AssemblyName>
+    <RootNamespace>SeapowerSurvivors</RootNamespace>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Version>0.1.0</Version>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <!-- netstandard facades vs the game's own BCL versions; harmless at runtime. -->
+    <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <SeaPowerDir Condition="'$(SeaPowerDir)' == ''">D:\SteamLibrary\steamapps\common\Sea Power</SeaPowerDir>
+    <ManagedDir>$(SeaPowerDir)\Sea Power_Data\Managed</ManagedDir>
+    <BepInExCore>$(SeaPowerDir)\BepInEx\core</BepInExCore>
+    <AnchorChainDll Condition="'$(AnchorChainDll)' == ''">$(SeaPowerDir)\..\..\workshop\content\1286220\3380210757\AnchorChain.dll</AnchorChainDll>
+    <ModDir>$(SeaPowerDir)\Sea Power_Data\StreamingAssets\SeapowerSurvivors</ModDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Seapower-Scripts"><HintPath>$(ManagedDir)\Seapower-Scripts.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(ManagedDir)\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.PhysicsModule"><HintPath>$(ManagedDir)\UnityEngine.PhysicsModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.IMGUIModule"><HintPath>$(ManagedDir)\UnityEngine.IMGUIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(ManagedDir)\UnityEngine.InputLegacyModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UniRx"><HintPath>$(ManagedDir)\UniRx.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(BepInExCore)\0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BepInEx"><HintPath>$(BepInExCore)\BepInEx.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="AnchorChain"><HintPath>$(AnchorChainDll)</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <!-- Everything under mod/ ships as-is: _info.ini and the test missions. -->
+  <ItemGroup>
+    <ModContent Include="..\..\mod\**\*" />
+  </ItemGroup>
+
+  <!-- Copy the mod into the game. The game must be restarted to pick up code. -->
+  <Target Name="DeployToGame" AfterTargets="Build" Condition="Exists('$(SeaPowerDir)') And '$(Deploy)' != 'false'">
+    <MakeDir Directories="$(ModDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModDir)" />
+    <Copy SourceFiles="@(ModContent)" DestinationFiles="@(ModContent->'$(ModDir)\%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Message Importance="high" Text="Deployed to $(ModDir)" />
+  </Target>
+
+</Project>
