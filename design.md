@@ -1,240 +1,219 @@
 # Design
 
-Working draft. The numbers are starting points for tuning, not decisions.
+Working draft, agreed 2026-10-28. The numbers are starting points for tuning.
+Where this document and the code disagree, the code is current:
 
-Setting: 1980s, a single NATO surface ship against Soviet ships and aircraft.
-**No submarines on either side**, for now. The fight is purely surface and air:
-incoming missiles, raids and missile boats.
+- the run script is in [Script.cs](src/SeapowerSurvivors/Script.cs);
+- XP is in [Progression.cs](src/SeapowerSurvivors/Progression.cs);
+- the upgrade lines are in [Upgrades.cs](src/SeapowerSurvivors/Upgrades.cs).
+
+**The ambition.** A simple start turns into something crazily overpowered: a
+Sverdlov that starts the run with ordinary 152 mm guns is firing them at 500%
+damage and ten times the rate by 15:00. The enemy matches that with
+numbers, not quality.
+
+No submarines on either side, for now.
 
 ---
 
-## Run structure
+## The run
 
-- A **run** is up to 4 waves of 15 minutes each (game time). It ends when you
-  sink or when you clear wave 4.
-- Your ship's weapons are set to Free, so they fire on their own. You steer,
-  hold distance, collect pickups and manage your sensors' emissions (EMCON).
-- **Level-up:** the game pauses and offers 3 cards. You get 1 reroll and
-  1 skip per wave.
-- **Between waves:**
-  - a partial ammunition refill (50% of what is missing);
-  - a hull repair (50% of lost integrity);
-  - one Doctrine pick (choose 1 of 3 rare cards).
+- **Length.** One continuous 15-minute run, in mission time. Surviving to
+  15:00 clears it. Losing the starting ship ends it.
+- **Final boss.** The run ends with a final boss group, for example an Iowa
+  and a Kirov with escorts. *(Not built yet.)*
+- **Who fights.** The fleet's weapons are set to Free and fight on their own.
+  You steer, manage emissions and pick upgrades.
+- **Survival is missile defence.** The ships are exactly as fragile as stock
+  Sea Power. Staying alive comes from having missiles to fire, hitting with
+  them, and point defence for what leaks through.
+- **Every level-up fully rearms every ship in the fleet** (magazines,
+  launchers, canisters and guns), with the game's own `RearmAll`. Level-ups
+  are the ammunition supply; there are no supply ships.
 
-### Starting hulls
+### Starting ships
 
-| Hull | Unit | Strengths | Starting perk |
-|---|---|---|---|
-| Perry frigate | `usn_ffg_oliver_hazard_perry` | Levels fastest, but fragile: 2 hull channels, 6 Harpoons, dies to 2 P-15 missiles | +25% XP |
-| Spruance gun destroyer | `usn_dd_spruance` | Most firepower, thinnest air defence: one Sea Sparrow channel, a 15-minute Sea Sparrow reload | Gun rate of fire, rank 1 |
-| Kidd destroyer | `usn_ddg_kidd` | The safe pick: 3 SAM channels and two twin-arm SM-1 launchers | SAM reload −20% |
+Chosen from a short list. The enemy is the other navy.
+
+| Ship | Unit | Status |
+|---|---|---|
+| Oliver Hazard Perry | `usn_ffg_oliver_hazard_perry` | Built |
+| Kidd | `usn_ddg_kidd` | Built |
+| Long Beach | `usn_cgn_long_beach_83` | Built |
+| Iowa | `usn_bb_iowa` | Built |
+| Sverdlov | `wp_kr_sverdlov` | Needs the NATO enemy roster |
 
 ## XP and levels
 
-- **XP per kill** is the enemy's own `_unitScoreValue`, scaled. Rough guide:
+Missile intercepts are the steady XP stream; ships and aircraft pay in larger
+lumps.
 
-  | Kill | XP |
+| Source | XP |
+|---|---|
+| Enemy missile shot down by our SAM or CIWS | 1 |
+| Zhuk / Stenka / Komar / Osa | 2 / 3 / 3 / 4 |
+| Tarantul / Nanuchka | 6 / 8 |
+| Kashin / Kresta I / Sovremenny | 15 / 20 / 30 |
+| Yak-38 / MiG-27 / Su-24A / Su-24M | 3 / 4 / 5 / 6 |
+| Tu-16 / Tu-16K / Tu-22M2 | 8 / 8 / 12 |
+
+- **Who gets credit.** An enemy missile counts only if one of our SAM blasts or
+  CIWS mounts struck it.
+- **The level curve:**
+
+  | Levels | XP for the next level | Wall |
+  |---|---|---|
+  | 1–9 | 2 × level | — |
+  | 10–19 | 3 × level | +20 at level 10 |
+  | 20 and up | 4 × level | +50 at level 20 |
+
+- **The card screen.** The game pauses and offers three cards per level, with
+  banked levels shown one after another. You get 3 rerolls a run, and a skip.
+
+## Upgrades
+
+All boosts are **direct and stacking**, and apply **across the whole fleet**.
+A ship that joins later gets everything already taken. They are written into
+each ship's own copies of its parameters, so the enemy's identical weapons
+are never boosted.
+
+### Weapon lines (built)
+
+One line per kind of armament in the fleet, each with a **fixed path of
+ranks**. A line is offered only if the fleet carries that kind of weapon.
+**Arcade, not simulation: three ranks of a line should already feel
+overpowered**, and the rest of the path takes it somewhere absurd. Most ranks
+carry two effects at once. The fleet's defence scores weight ranks heavily,
+so missile and air waves arrive as soon as the upgrades can meet them.
+
+| Line | Ranks | Rank 1 | By rank 3 | At max rank |
+|---|---|---|---|---|
+| Guns | 8 | Rate of fire and damage ×3 | Rate of fire and damage ×12 | ×384 each |
+| Flak | 6 | Proximity fuzes and AA fire-control tables; fuze radius ×4 | Surface-only guns engage aircraft, prediction error ×0.25, fuze ×16 (5 m → 80 m on a 100 mm) | Fuze 180 m, prediction error ×0.125 |
+| Surface-to-air missiles | 8 | Reload ×0.25, kill probability +20 | Reload ×0.06, Pk +50, +2 channels on every director | Reload ×0.016, Pk +90 (capped at 1), +8 channels |
+| Anti-ship missiles | 8 | Warhead damage ×3 | Damage ×9, speed ×2, range ×2, RCS ×0.5 | Damage ×36, speed ×3, range ×3, RCS ×0.125 |
+| Point defence (CIWS) | 6 | Intercept +30, rate of fire ×2 | Intercept +80 (capped at 99), rate of fire ×8 | Rate of fire ×36 |
+| Countermeasures (chaff) | 5 | Spoof +25, reload ×0.5 | Spoof +65, reload ×0.125 | Spoof capped at 0.95, reload ×0.06, the game's "three spoofs then a forced failure" rule lifted |
+
+**Why Flak grows the fuze, not the aim.** Traced in game: with fire-control
+error removed, shells still pass 100–200 m from a Yak-38, because it moves
+while they fly and the game's lead assumes it flies straight. A bigger burst
+radius covers that.
+
+**Fire-control channels are the SAM's rate of fire.** A director with one
+channel engages one target however fast its launcher reloads, so the SAM line
+adds channels.
+
+### Crew lines (built)
+
+| Line | Ranks | Per rank |
+|---|---|---|
+| Reaction | 5 | The OODA loop runs four times as fast: contact processing, alignment delay, engage checks, target acquisition |
+| Gunnery | 5 | Fire-control error quartered, solutions four times as fast |
+
+**Damage control was dropped.** These ships die to two or three hits, so
+repair rarely gets the chance to matter. Countermeasures took its place:
+a decoyed missile is a stopped one. Its ranks also count towards the
+fleet's anti-missile score.
+
+### Fleet ships (next)
+
+- **Where they come from.** Each mini-boss sunk opens a **chest** offering a
+  choice of 2–3 ships to join you.
+- **Joining.** The chosen ship spawns nearby and holds station on you; you can
+  command it as normal.
+- **Upgrades.** Its weapons join the weapon lines, so every ship joins already
+  upgraded.
+
+### Air track (later)
+
+Aircraft come on their own track, every 5 levels to begin with, separate from
+ship chests:
+
+| Asset | What it does |
+|---|---|
+| AWACS | Sees past the horizon for the whole fleet |
+| CAP | A fighter pair that hunts aircraft. It is also the answer to stand-off raids, which appear only once the fleet has air cover |
+| Strike flight | Attack aircraft that hit the nearest enemy group on a cooldown |
+
+---
+
+## Enemies
+
+**Enemies never get individually stronger. They only get more numerous**,
+through the script's quotas.
+
+The script has one row per minute. Each row sets four things:
+
+- **a menu** of groups the director may send;
+- **a quota** of enemy units it keeps alive, topped up as they die;
+- **a minimum interval** between sends;
+- **anything scripted** for the top of the minute.
+
+| Minute | Quota | Scripted |
+|---|---|---|
+| 0–2 | 2 → 4 | Patrol boats, torpedo boats, Komars |
+| 3 | 4 | Mini-boss: Kashin |
+| 5 | 6 | Osa pack: six boats on one bearing |
+| 6 | 6 | Mini-boss: Tu-16 trio |
+| 8 | 7 | Yak-38 swarm |
+| 9 | 8 | Mini-boss: Kresta I |
+| 11 | 9 | Osa pack |
+| 12 | 9 | Mini-boss: Sovremenny |
+| 13 | 10 | Yak-38 swarm |
+| 14 | 12 | Everything |
+
+**Mini-boss chests.** Each mini-boss sunk pays a chest. For now that is one
+level-up (three at a 20% chance); next, a choice of ships.
+
+### Spawning
+
+- **Surface groups spawn at the edge of the fight,** not on fixed rings. That
+  is just outside the fleet's reach against them, plus about a minute's
+  closing. Reach means the fleet's longest anti-surface weapon, capped at the
+  radar horizon against that target. Enemies come in at full speed.
+  - Fixed rings put a gun cruiser's targets an hour's steaming away: no kills,
+    no XP, and no levels.
+  - Spawning at the edge means the player opens fire within a minute, and a
+    short-ranged enemy is shot at all the way in.
+- **Faster kills, not hit XP.** The opening minutes are fragile boats in threes
+  (Zhuks, PGMs) at a higher quota, so kills come every 20–30 seconds.
+- **Missile groups** wait for the fleet's anti-missile score (see
+  [Defence.cs](src/SeapowerSurvivors/Defence.cs)). A surface boss always
+  comes, but with its anti-ship launchers out of action until the score is
+  reached.
+- **Air groups** wait for the fleet's anti-air score, in proportion to their
+  size:
+
+  | Group size | Anti-air score needed |
   |---|---|
-  | Patrol boat | 1 |
-  | Helicopter | 2 |
-  | Aircraft | 3 |
-  | Osa missile boat | 4 |
-  | Frigate | 15 |
-  | Boss | 100 |
+  | One aircraft | Always allowed |
+  | Two | 3 |
+  | Three | 6 |
+  | Four or more | 10 |
 
-- **Incoming missile shot down:** 0.5 XP. Defence pays.
-- **Level curve:** XP needed for the next level = 5 + 4 × level.
-- **Who gets credit:** the game only records damage per side, so the mod tracks
-  the last unit to hit each target (see [hooks](docs/hooks.md#kills-and-xp)).
-  Kills by your escorts count as yours.
-
-## Upgrade pool
-
-Up to 5 ranks each unless stated. The method column says how the effect is
-applied; details are in [hooks.md](docs/hooks.md#upgrades).
-
-- **Direct:** change a value the game reads live.
-- **Patch:** intercept a game calculation with a Harmony hook.
-- **Spawn:** create a friendly unit.
-- **Unverified:** no hook has been found in the code yet.
-
-### Sensors
-
-| Upgrade | Effect per rank | Method |
-|---|---|---|
-| Mast height | +20 m search-radar antenna height (about +3 nm against an Osa at rank 1, less each rank after) | Direct, confirmed in game |
-| Low-altitude search | Lowers air-search radars' minimum altitude (rank 1: halved, rank 2: 0 m) | Direct |
-| Radar gain | +1.5 dB, for burn-through against jammers | Direct |
-| Scan rate | +20% antenna RPM, so contacts confirm sooner | Patch (private field) |
-| ESM sensitivity | Detect enemy radar emissions from farther away | Unverified |
-
-**What limits detection.** The radar horizon is what limits detection of ships
-and sea-skimmers, not power: a Spruance cannot see an Osa beyond about 18 nm,
-whatever its radar's output. Mast height is the only stat that moves the
-horizon, and it grows only with the square root of height, so the Targeting
-helicopter and Early warning escorts remain the real way to see past it.
-
-**Upgrades dropped.** "Radar power" did nothing useful and is gone. Look-down
-range is also gone, because no ship radar uses it. See
-[combat model](docs/combat-model.md#radar-detection).
-
-### Fire control and defence
-
-| Upgrade | Effect per rank | Method |
-|---|---|---|
-| **Fire-control channel** | +1 target and +1 missile channel on every guidance radar (rare, max 3) | Direct |
-| SAM kill probability | +5% intercept chance | Direct |
-| CIWS intercept | +5% intercept chance (CIWS: close-in point-defence guns, e.g. Phalanx) | Direct |
-| Reaction time | Faster target acquisition and engagement | Direct |
-| Salvo doctrine | Fire 2 SAMs per threat, then saturation (max 2) | Direct |
-| Decoys | Chaff more likely to spoof; faster chaff reload | Direct + Patch |
-| Jammer | Better chance to jam incoming radar-guided missiles | Unverified |
-
-Fire-control channels are the real limit on how much a ship can engage at once
-(see [combat model](docs/combat-model.md#fire-control-is-the-bottleneck)).
-This upgrade is the "more projectiles" stat.
-
-### Weapons
-
-| Upgrade | Effect per rank | Method |
-|---|---|---|
-| Missile range | +15% launch range, with drag corrected so the missile really flies there | Direct |
-| Missile reload | −15% launcher reload | Direct |
-| SAM reload | −15% SAM launcher reload | Direct |
-| Gun rate of fire | +15% | Patch |
-| Gun damage | +15% shell power | Direct |
-| Deep magazines | +25% capacity across all magazines | Direct |
-
-Gun range was dropped: guns need dozens of hits, so range barely matters.
-
-### Survival
-
-| Upgrade | Effect per rank | Method |
-|---|---|---|
-| Hull integrity | +15% maximum hidden integrity (effectively max HP) | Direct |
-| Patch-up | Restore 10% of hull integrity on each level-up | Direct |
-| Damage reduction | −8% incoming weapon damage | Patch |
-| Damage control | +20% repair rates, +1 damage-control team | Direct |
-| Engines | +6% top speed | Direct |
-| Replenishment range | +0.5 nm pickup radius | Mod-side |
-
-"Armour" was dropped as a name. The game's armour classes only affect guns;
-every large anti-ship missile ignores them.
-
-### Escorts
-
-| Upgrade | Rank 1 | Later ranks |
-|---|---|---|
-| Targeting helicopter | An SH-2F that spots ships beyond the radar horizon, so Harpoons can use their full range | Faster respawn |
-| Fighter cover | 2 F-14s on combat air patrol every 5 minutes | Shorter interval |
-| Early warning | An E-2 Hawkeye overhead | Wider coverage |
-| Wingman frigate | A Perry that follows you | More ships, or heal it |
-
-Close-in guns (CIWS) only defend their own ship, so a wingman must survive on
-its own defences.
-
-### Doctrine picks (between waves only)
-
-| Pick | Effect |
-|---|---|
-| Swarm Breaker | Each missile shot down reloads 1 round into a random SAM launcher |
-| Silent Running | With radar off, take 30% less damage, and enemies spawn farther out |
-| Overmatch | +25% missile damage against targets below half integrity |
-| Gunline | Gun kills give +50% XP; gun magazines refill twice as fast |
+  Aircraft airborne at once are capped at half the anti-air score. An air
+  boss the fleet cannot face is replaced by a surface one.
+- **Stand-off raids** (Tu-16K, Tu-22M2, B-52G) also wait for air cover.
+- **Caps.** At most 16 enemy units are alive at once. Air groups are held
+  while more than 14 enemy missiles are in flight.
 
 ---
 
-## Waves
+## Not doing
 
-A threat budget grows each minute. The director spends it on enemy groups from
-the wave's menu.
+These were considered and dropped:
 
-When each group spawns, the director:
-
-1. reveals the player's ship to that group, so they attack at once;
-2. gives it waypoints toward the player, because spawned enemy ships do not
-   close the distance on their own;
-3. sets it to Free.
-
-**Missile cap:** when more than about 12 missiles are already heading for you,
-the director holds back new air raids.
-
-### Spawn rings
-
-| Threat | Distance |
-|---|---|
-| Missile boats | 25–35 nm, just past radar range at sea level |
-| Surface groups | 40–60 nm |
-| Air raids | 120–150 nm, high altitude |
-
-### Wave 1
-
-| Time | Arrivals |
-|---|---|
-| 0–3 | Patrol boats, single helicopters |
-| 3–6 | Osa pairs (`wp_ptg_osa1`, P-15 missiles), the first incoming missiles |
-| 6–9 | First air raid: 2 Tu-16K (`wp_tu-16k`, Strike loadout, KSR-5 missiles) |
-| 9–12 | A second raid from a different bearing, and a destroyer pair |
-| 12–15 | Everything, budget ×2 |
-| 15:00 | **Boss: Sovremenny** (`wp_em_sovremenny`). Sink it to clear the wave. |
-
-### Later waves
-
-| Wave | Budget | New threats | Boss |
-|---|---|---|---|
-| 2 | ×1.6 | Sovremenny groups with SS-N-22 (Moskit) missiles | Slava (`wp_rkr_slava`) |
-| 3 | ×2.4 | Tu-22M2 (`wp_tu-22m2`) with Kh-22 missiles, launched from long range | Kirov (`wp_rkr_kirov`) |
-| 4 | ×3.5 | Everything | Kiev carrier group (`wp_takr_kiev`) |
-
-Kresta II was dropped as a boss: its only missile, the SS-N-14, is
-anti-submarine.
-
----
-
-## Pickups
-
-Neutral ships spawn on timers. Sailing within the pickup radius (2 nm to
-start) applies the effect and despawns the ship, with no kill scored. Each
-pickup is revealed to the player when it spawns and announced, e.g.
-"USNS Kilauea on station bearing 270, 14 nm".
-
-| Pickup | Unit | Gives | Behaviour |
-|---|---|---|---|
-| Ammunition ship | `usn_ae_kilauea` | Refills 50% of missing missiles, including the Harpoon launchers | About 15 kn, spawns 10–20 nm out, leaves after 4 minutes |
-| Fast combat support ship | `usn_aoe_sacramento` | Ammunition refill and 25% hull integrity | About once per wave |
-| Oiler | `usn_ao_t2` | +20% top speed for 3 minutes | Common |
-| Supply helicopter | `usn_ch-46` | 4 missiles reloaded | Flies to you, announced 3 minutes ahead; you must survive until it arrives |
-
-Enemy active-radar missiles lock onto the strongest radar return, and a supply
-ship is huge. A pickup near you may therefore draw fire, or be sunk before you
-reach it. A sunk pickup scores nothing either way.
-
-## Hazard: airliners
-
-Civilian airliners (`civ_707`, `civ_dc-10`, `civ_il-62`, `civ_tu-154`) cross
-the area on timers. They are neutral, so weapons set to Free leave them alone.
-Shooting one down costs heavily. Any "fire on anything" doctrine therefore
-becomes a real gamble.
-
----
+- **Sensor and hull items:** mast height, radar gain, low-altitude search,
+  engines, deep magazines, hull toughness and regeneration, and damage
+  control.
+- **Supply ships:** rearming comes from levels instead.
+- **Swapping weapons for newer real variants** (for example RIM-66B →
+  RIM-66E): direct boosts instead.
+- **Enemy quality scaling.**
 
 ## Open questions
 
-1. **Wave count:** 4 waves of 15 minutes is assumed and not yet confirmed.
-2. **Airliner penalty:** lose XP, or end the run?
-3. **Escorts:** do escorts' kills count fully as yours?
-4. **Unit names:** the patrol-boat unit name is still unconfirmed. F-14 is
-   `usn_f-14a` and E-2 is `usn_e-2c`, both confirmed by the campaign mod's
-   generated battle, which loaded and played.
-
-## First milestone: proof of concept
-
-One quick battle and one hotkey. Pressing it should:
-
-1. spawn an enemy destroyer 20 nm out;
-2. double the player's radar range;
-3. halve one launcher's reload time;
-4. refill a magazine;
-5. log XP when something dies.
-
-If all five work in game, the rest is content and balance.
+1. **Escorts and XP:** do kills by joined ships and aircraft count fully as
+   yours?
+2. **Final boss:** what is its composition for each side?

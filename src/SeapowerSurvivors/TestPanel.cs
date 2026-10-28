@@ -17,18 +17,34 @@ namespace SeapowerSurvivors;
 /// </remarks>
 public class TestPanel : MonoBehaviour
 {
-    static readonly (string label, string type)[] Enemies =
+    static readonly (string label, string type)[] SovietShips =
     {
         ("Osa I", "wp_ptg_osa1"),
         ("Sovremenny", "wp_em_sovremenny"),
         ("Slava", "wp_rkr_slava"),
     };
+    static readonly (string label, string type)[] NatoShips =
+    {
+        ("Z-class", "rn_dd_z-class"),
+        ("Battle", "rn_dd_battle"),
+        ("Knox", "usn_ff_knox"),
+    };
     static readonly float[] Distances = { 10f, 20f, 40f };
+    static readonly float[] ThreatMultipliers = { 0.5f, 1f, 2f };
+    static readonly (string label, Group group)[] AirGroups =
+    {
+        ("Yak-38", Script.SovietEnemy.Yaks),
+        ("Tu-16", Script.SovietEnemy.Badger),
+        ("Su-24A", Script.SovietEnemy.Fencers),
+        ("Tu-16K stand-off", Script.SovietEnemy.BadgerKs),
+    };
     const int MaxEvents = 8;
 
     static readonly List<string> events = new List<string>();
 
-    static readonly string[] Tabs = { "Detection", "Weapons" };
+    static readonly string[] Tabs = { "Detection", "Weapons", "Upgrades" };
+    static readonly HarmonyLib.AccessTools.FieldRef<WeaponSystemGun, float> GunReload =
+        HarmonyLib.AccessTools.FieldRefAccess<WeaponSystemGun, float>("_shellReloadTime");
     const float MastStepMetres = 30f;
     const float RefreshSeconds = 1f;
 
@@ -91,7 +107,33 @@ public class TestPanel : MonoBehaviour
             return;
         }
 
-        GUILayout.Label($"{ship.Name.Value} ({ship._obp._objectIniName})   t={GameTime.missionElapsedTime / 60:F1} min   XP {KillLog.Xp:F1}");
+        var run = global::SeapowerSurvivors.Run.Current;
+        GUILayout.Label($"{ship.Name.Value} ({ship._obp._objectIniName})   t={GameTime.missionElapsedTime / 60:F1} min" +
+            (run == null ? "   no run" : $"   level {run.Level}, XP {run.Xp:F0}"));
+
+        var director = Director.Instance;
+        GUILayout.BeginHorizontal();
+        if (!director.Running) { if (GUILayout.Button("Start run")) Try(director.StartRun); }
+        else
+        {
+            if (GUILayout.Button("Stop run")) Try(director.StopRun);
+            if (GUILayout.Button("Skip phase")) Try(director.SkipMinute);
+            if (GUILayout.Button("+1 level")) Try(() => run.PendingLevels++);
+        }
+        GUILayout.Label("Threat", GUILayout.ExpandWidth(false));
+        foreach (float m in ThreatMultipliers)
+            if (GUILayout.Toggle(Mathf.Approximately(director.ThreatMultiplier, m), $"x{m}", "Button")) director.ThreatMultiplier = m;
+        if (run != null)
+        {
+            bool airCover = run.Has.Contains(Capability.AirCover);
+            if (GUILayout.Toggle(airCover, "Pretend air cover", "Button") != airCover)
+            {
+                if (airCover) run.Has.Remove(Capability.AirCover);
+                else run.Has.Add(Capability.AirCover);
+                Report(airCover ? "Air cover off: no stand-off raids" : "Air cover on: stand-off raids can spawn");
+            }
+        }
+        GUILayout.EndHorizontal();
 
         GUILayout.Label("Spawn enemy, sent toward you:");
         GUILayout.BeginHorizontal();
@@ -99,19 +141,25 @@ public class TestPanel : MonoBehaviour
             if (GUILayout.Toggle(Mathf.Approximately(distanceNm, d), $"{d:F0} nm", "Button")) distanceNm = d;
         GUILayout.EndHorizontal();
         GUILayout.BeginHorizontal();
-        foreach (var (label, type) in Enemies)
-            if (GUILayout.Button(label)) Run(() => SpawnEnemy(ship, type, distanceNm));
+        foreach (var (label, type) in ship._obp._objectIniName.StartsWith("wp_") ? NatoShips : SovietShips)
+            if (GUILayout.Button(label)) Try(() => SpawnEnemy(ship, type, distanceNm));
+        GUILayout.EndHorizontal();
+        GUILayout.BeginHorizontal();
+        GUILayout.Label("Air, at their wave range:", GUILayout.ExpandWidth(false));
+        foreach (var (label, group) in AirGroups)
+            if (GUILayout.Button(label)) Try(() => SpawnAir(ship, group));
         GUILayout.EndHorizontal();
 
         GUILayout.Label("Apply to your ship:");
         GUILayout.BeginHorizontal();
-        if (GUILayout.Button($"Mast +{MastStepMetres:F0} m")) Run(() => RaiseMast(ship));
-        if (GUILayout.Button("Low-alt search")) Run(() => LowAltitudeSearch(ship));
-        if (GUILayout.Button("Radar gain +3 dB")) Run(() => RaiseGain(ship));
+        if (GUILayout.Button($"Mast +{MastStepMetres:F0} m")) Try(() => RaiseMast(ship));
+        if (GUILayout.Button("Low-alt search")) Try(() => LowAltitudeSearch(ship));
+        if (GUILayout.Button("Radar gain +3 dB")) Try(() => RaiseGain(ship));
         GUILayout.EndHorizontal();
         GUILayout.BeginHorizontal();
-        if (GUILayout.Button("Launcher reload /2")) Run(() => HalveLauncherReload(ship));
-        if (GUILayout.Button("Rearm")) Run(() => Rearm(ship));
+        if (GUILayout.Button("Launcher reload /2")) Try(() => HalveLauncherReload(ship));
+        if (GUILayout.Button("Rearm")) Try(() => Rearm(ship));
+        if (GUILayout.Button("AA report to log")) Try(() => AaReport.Log(ship));
         GUILayout.EndHorizontal();
 
         tab = GUILayout.Toolbar(tab, Tabs);
@@ -120,8 +168,12 @@ public class TestPanel : MonoBehaviour
         {
             foreach (string line in detection) GUILayout.Label(line);
         }
-        else
+        else if (tab == 1)
         {
+            foreach (var gun in ship._obp._gunWeapons)
+                GUILayout.Label($"Gun {gun._vwp._systemName}: {gun._vwp._fireRatePerMinute} rpm listed, reload between shells {GunReload(gun):F2} s");
+            foreach (var ciws in ship._obp._ciwsWeapons)
+                GUILayout.Label($"CIWS {ciws._vwp._systemName}: {ciws._fireRatePerMinute} rpm, missile intercept {ciws._missileInterceptChance:F0}");
             foreach (var launcher in ship._obp._launcherWeapons)
             {
                 int loaded = launcher._containers.Sum(c => c._weapons.Count);
@@ -130,7 +182,26 @@ public class TestPanel : MonoBehaviour
             }
             foreach (var magazine in ship._obp._magazineSystems)
                 foreach (var ammo in magazine._ammunitionList.Where(a => a != null))
-                    GUILayout.Label($"Magazine {ammo._ap._ammunitionFileName}: {ammo._ap._magazineAmmoCount}/{magazine._initialAmmoCount[ammo]}");
+                {
+                    var ap = ammo._ap;
+                    GUILayout.Label($"Magazine {ap._ammunitionFileName}: {ap._magazineAmmoCount}/{magazine._initialAmmoCount[ammo]}, " +
+                        $"power {ap._warheadPower:F1}, Pk {ap._killProbability:F2}, {ap._maxVelocityInKnots:F0} kn, {ap._maxLaunchRangeInMiles:F0} nm, RCS {ap._maxRCS:F2}");
+                }
+        }
+        else
+        {
+            if (run == null) GUILayout.Label("Start a run to rank up lines.");
+            else
+                foreach (var line in Upgrades.All)
+                {
+                    GUILayout.BeginHorizontal();
+                    int rank = run.RankOf(line);
+                    GUILayout.Label($"{line.Name} ({line.Kind}): rank {rank}/{line.MaxRank}" + (line.Fits(run.Fleet) ? "" : "  (no such weapons)"));
+                    GUI.enabled = rank < line.MaxRank;
+                    if (GUILayout.Button("+1 rank", GUILayout.Width(80))) Try(() => run.Take(line));
+                    GUI.enabled = true;
+                    GUILayout.EndHorizontal();
+                }
         }
         GUILayout.EndScrollView();
 
@@ -140,7 +211,7 @@ public class TestPanel : MonoBehaviour
         GUI.DragWindow();
     }
 
-    static void Run(Action action)
+    static void Try(Action action)
     {
         try { action(); }
         catch (Exception e) { Report($"Failed: {e.Message}"); Entry.Log.LogError(e); }
@@ -159,33 +230,24 @@ public class TestPanel : MonoBehaviour
     static void SpawnEnemy(ObjectBase player, string type, float distanceNm)
     {
         float bearing = UnityEngine.Random.Range(0f, 360f);
-        var at = Offset(player._geoPosition, distanceNm, bearing);
-        float headingToPlayer = (bearing + 180f) % 360f;
-
-        var objects = Singleton<ObjectsManager>.Instance;
-        var ship = objects.createShip("random", "default", type, objects._listOfAllObjects.Count + 1,
-            Singleton<SceneCreator>.Instance.GeoCenterPosition, at, 3,
-            new Vector3(0f, headingToPlayer, 0f), Globals._enemyTaskforce);
+        var ship = Spawner.Ship(type, Spawner.Offset(player._geoPosition, distanceNm, bearing),
+            (bearing + 180f) % 360f, Globals._enemyTaskforce);
         if (ship == null)
         {
             Report($"createShip returned null for {type}");
             return;
         }
-
-        // The same post-spawn setup the game's own CivilianRoute performs.
-        ship.transform.position = Utils.longLatToLocalV3(at, Globals._currentCenterTile);
-        Physics.SyncTransforms();
-        ship._geoPosition = at;
-        ship.DesiredAltitude.Value = ship.transform.position.y;
-        ship._velocityInKnots = ship._telegraph * ship.MaxForwardSpeedInKnots / 5f;
-        ship._velocityInUnity = ship._velocityInKnots * 0.0076554087f;
-
-        // Spawned ships do not close on their own, and do not know we exist.
-        ship.setWaypointTask(player._geoPosition);
-        Utils.RevealContactToObject(ship, player, "Comms", 3);
-        ship._weaponStatus = ObjectBase.WeaponStatus.Free;
-
+        Spawner.Hunt(ship, player);
         Report($"Spawned {type} '{ship.Name.Value}' {distanceNm:F0} nm, bearing {bearing:F0}");
+    }
+
+    static void SpawnAir(ObjectBase player, Group group)
+    {
+        var made = new List<ObjectBase>();
+        Director.Instance.SpawnGroup(group, player, made);
+        Report(made.Count > 0
+            ? $"Spawned {made.Count}x {group.Name} ({group.Loadout}) at {group.MinNm:F0}-{group.MaxNm:F0} nm, {group.AltitudeFt:F0} ft, {made[0]._velocityInKnots:F0} kn"
+            : $"{group.Name} failed to spawn: see the log");
     }
 
     static void RaiseMast(ObjectBase ship)
@@ -248,18 +310,5 @@ public class TestPanel : MonoBehaviour
         // The game's own rearm, as used by the mission trigger action.
         ship.RearmAll();
         Report("RearmAll() called");
-    }
-
-    /// <summary>
-    /// GeoPosition.GeoOffsetByDistanceOnHeading ignores cos(latitude) for
-    /// longitude, which stretches east-west offsets away from the equator.
-    /// </summary>
-    static GeoPosition Offset(GeoPosition from, float distanceNm, float bearingDeg)
-    {
-        double rad = bearingDeg * Math.PI / 180.0;
-        double dLat = distanceNm / 60.0 * Math.Cos(rad);
-        double cosLat = Math.Max(0.01, Math.Cos(from._latitude * Math.PI / 180.0));
-        double dLon = distanceNm / 60.0 * Math.Sin(rad) / cosLat;
-        return new GeoPosition(from._latitude + dLat, from._longitude + dLon, 0.0);
     }
 }

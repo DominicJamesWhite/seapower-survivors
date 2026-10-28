@@ -38,14 +38,34 @@ Code is loaded once per launch, so **restart the game after every build**.
 The mod logs to `<install>/BepInEx/LogOutput.log` under the source
 `Survivors`.
 
-## Test ranges
+## Missions
 
-The mod adds a **Survivors (test)** category to the Scenarios menu:
-**Test Range - Spruance**, **Test Range - Kidd** and **Test Range - Perry**.
-Each one puts a single ship in open water between Iceland and the Faroes,
-with weapons Free and no enemies until you spawn them. The only ending is
-losing the ship; leave through the pause menu. The missions are plain INI
-files in [mod/missions/Survivors/](mod/missions/Survivors/).
+The mod adds a **Survivors** category to the Scenarios menu. The missions are
+plain INI files in [mod/missions/Survivors/](mod/missions/Survivors/). Each
+puts one ship (Perry, Kidd, Long Beach or Iowa) in open water between Iceland and the
+Faroes, with weapons Free.
+
+| Mission | What happens |
+|---|---|
+| **Survivors - Perry / Kidd / Long Beach / Iowa** | A full run. The director starts it by itself 10 s in, because the file name starts with `Survivors - ` |
+| **Test Range - Perry / Kidd / Long Beach / Iowa** | No enemies until you spawn them from the test panel, or press *Start run* there |
+
+## The run
+
+- **The script.** [Director.cs](src/SeapowerSurvivors/Director.cs) runs the
+  minute-by-minute table in [Script.cs](src/SeapowerSurvivors/Script.cs).
+  Each minute has a quota of enemy units kept alive, topped up as they die;
+  scripted spikes; and a mini-boss every three minutes. Surviving 15:00 of
+  mission time declares victory.
+- **XP.** [CombatHooks.cs](src/SeapowerSurvivors/CombatHooks.cs) pays XP for
+  kills and for enemy missiles our SAMs or CIWS shoot down. The values and
+  level curve are in [Progression.cs](src/SeapowerSurvivors/Progression.cs).
+- **Level-ups.** [LevelUpScreen.cs](src/SeapowerSurvivors/LevelUpScreen.cs)
+  pauses the game and offers three upgrades from
+  [Upgrades.cs](src/SeapowerSurvivors/Upgrades.cs). Banked levels are shown
+  one after another.
+- **Status line.** One along the top shows time left, level and XP bar, hull,
+  kills, intercepts, live enemies and enemy missiles in flight.
 
 ## Test panel
 
@@ -55,7 +75,8 @@ SeapowerMultiplayer takes Ctrl+F9 to Ctrl+F11. Windows swallows Ctrl+Shift+0.
 
 | Section | Does |
 |---|---|
-| Spawn enemy | Spawns an Osa I, Sovremenny or Slava at 10, 20 or 40 nm on a random bearing. It is revealed to you, weapons Free, and sent toward you |
+| Run | Start or stop a run, skip a minute, grant a level, set the threat multiplier (x0.5, x1, x2) live, and pretend to have air cover |
+| Spawn enemy | Spawns an Osa I, Sovremenny or Slava at 10, 20 or 40 nm on a random bearing, or a pair of Tu-16K bombers at 160–175 nm. Each is told where you are, set to weapons Free and sent toward you |
 | Apply to your ship | Mast +30 m (radar horizon), low-altitude search, radar gain +3 dB, launcher reload halved, or a rearm with the game's own `RearmAll` |
 | Detection tab | Each search radar's antenna height, range and altitude floor; then every enemy unit and missile, either SEEN (and by which radars) or HIDDEN, with what stops each radar: role, altitude window, max range, horizon, terrain or power |
 | Weapons tab | Launcher reloads and loaded rounds, and magazine counts |

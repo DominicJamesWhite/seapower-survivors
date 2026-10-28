@@ -101,10 +101,12 @@ Singleton<ObjectsManager>.Instance.createShip(variantRef, loadout, "wp_ptg_osa1"
   - set the transform position and call `Physics.SyncTransforms()`;
   - seed `_velocityInKnots`, otherwise the ship starts at 0 kn;
   - for aircraft: `ImmediateStartEngines()`, `SetFlightPhysicsModel(true)`.
-- **Positions:** 1 nm = 27.559496 Unity units.
-  `Utils.worldPositionFromUnityToLongLat` converts a Unity position to
-  lat/long. Use `TerrainUtils.IsThereOnlyWaterForRadius` to check for open
-  water.
+- **Positions:** 1 nm = 27.559496 Unity units. **The world is a flat
+  latitude/longitude grid: a degree of longitude is 60 nm at every latitude**
+  (`GeoPosition.GetDistanceInDeg`, `Utils.longLatToLocalV3`). Use
+  `GeoOffsetByDistanceOnHeading` as it is; correcting it for cos(latitude)
+  stretches east-west offsets 2.1x at 62 N. Use
+  `TerrainUtils.IsThereOnlyWaterForRadius` to check for open water.
 - **Orders:** `ObjectBase.setWaypointTask(geo)`. A forced attack is an
   `EngageTask` plus `AddEngageTask`, following `CoreService.AttackVehicle`.
 - **Making enemies aware of the player:** `Utils.RevealContactToObject`.
