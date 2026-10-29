@@ -56,6 +56,8 @@ public class TestPanel : MonoBehaviour
     int tab;
     List<string> detection = new List<string>();
     float nextRefresh;
+    int launchFlagship;
+    readonly List<Escort> launchShips = new List<Escort>();
 
     /// <summary>Log a line and keep it on the panel's event feed.</summary>
     internal static void Report(string line)
@@ -102,7 +104,8 @@ public class TestPanel : MonoBehaviour
         var ship = PlayerShip();
         if (ship == null)
         {
-            GUILayout.Label("No player ship: start a mission (Scenarios > Survivors (test)).");
+            if (Launcher.AtMainMenu) DrawLauncher();
+            else GUILayout.Label("No player ship: start a mission (Scenarios > Survivors (test)).");
             GUI.DragWindow();
             return;
         }
@@ -119,6 +122,11 @@ public class TestPanel : MonoBehaviour
             if (GUILayout.Button("Stop run")) Try(director.StopRun);
             if (GUILayout.Button("Skip phase")) Try(director.SkipMinute);
             if (GUILayout.Button("+1 level")) Try(() => run.PendingLevels++);
+            for (int tier = 1; tier <= 3; tier++)
+            {
+                int t = tier;
+                if (GUILayout.Button($"Chest T{t}")) Try(() => run.ShipChests.Enqueue(t));
+            }
         }
         GUILayout.Label("Threat", GUILayout.ExpandWidth(false));
         foreach (float m in ThreatMultipliers)
@@ -215,6 +223,43 @@ public class TestPanel : MonoBehaviour
     {
         try { action(); }
         catch (Exception e) { Report($"Failed: {e.Message}"); Entry.Log.LogError(e); }
+    }
+
+    /// <summary>Test aid until the main menu has its own button: pick a loadout and launch a run without a scenario.</summary>
+    void DrawLauncher()
+    {
+        GUILayout.Label("Launch a run");
+        GUILayout.BeginHorizontal();
+        for (int i = 0; i < Launcher.Flagships.Length; i++)
+            if (GUILayout.Toggle(launchFlagship == i, Launcher.Flagships[i].Name, "Button") && launchFlagship != i)
+            {
+                launchFlagship = i;
+                // The other navy's ships cannot sail with it.
+                launchShips.Clear();
+            }
+        GUILayout.EndHorizontal();
+
+        var flagship = Launcher.Flagships[launchFlagship];
+        GUILayout.Label("Add a starting ship");
+        GUILayout.BeginHorizontal();
+        foreach (var escort in Escorts.NavyOf(flagship.Type).Where(e => !e.IsAir && e.Tier == 1))
+            if (GUILayout.Button(escort.Name)) launchShips.Add(escort);
+        GUILayout.EndHorizontal();
+
+        GUILayout.BeginHorizontal();
+        GUILayout.Label(launchShips.Count == 0 ? $"{flagship.Name} alone" : $"{flagship.Name} with {string.Join(", ", launchShips.Select(e => e.Name))}");
+        if (launchShips.Count > 0 && GUILayout.Button("Clear", GUILayout.ExpandWidth(false))) launchShips.Clear();
+        GUILayout.EndHorizontal();
+
+        if (GUILayout.Button(Launcher.Launching ? "Loading..." : "Launch"))
+            Try(() =>
+            {
+                var loadout = new Loadout(flagship);
+                loadout.Ships.AddRange(launchShips);
+                Launcher.Launch(loadout);
+            });
+        GUILayout.Label("Events:");
+        foreach (var line in events) GUILayout.Label(line);
     }
 
     internal static ObjectBase PlayerShip()

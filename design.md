@@ -116,55 +116,86 @@ repair rarely gets the chance to matter. Countermeasures took its place:
 a decoyed missile is a stopped one. Its ranks also count towards the
 fleet's anti-missile score.
 
-### Fleet ships (next)
+### Reinforcements: ships and aircraft (built)
 
-- **Where they come from.** Each mini-boss sunk opens a **chest** offering a
-  choice of 2–3 ships to join you.
-- **Joining.** The chosen ship spawns nearby and holds station on you; you can
-  command it as normal.
-- **Upgrades.** Its weapons join the weapon lines, so every ship joins already
-  upgraded.
+- **Where they come from.** Each mini-boss sunk opens a **chest**: a pick of
+  3 from your own navy, then the chest's level-ups. Ships and flights share
+  one pool, so a chest can be all ships, all aircraft, or a mix. Chests at
+  phases 3, 6, 9 and 12 offer tiers 1, 2, 2 and 3.
 
-### Air track (later)
+  | Tier | Ships | Flights |
+  |---|---|---|
+  | 1 | Frigates and destroyers | A fighter pair (F-4J / MiG-23MS), a strike pair (A-7E / Yak-38) |
+  | 2 | Destroyers and cruisers | AWACS (E-2C / Tu-95RT scout), a fighter pair (F-14A / MiG-23MLD), a strike pair (A-6E Harpoon / Su-24A) |
+  | 3 | The big cruisers, Iowa, Kirov | Four long-range fighters (F-14A Phoenix / MiG-25PD), four strike aircraft (A-6E, F/A-18A / Su-24M), Tu-22M2 pair |
 
-Aircraft come on their own track, every 5 levels to begin with, separate from
-ship chests:
-
-| Asset | What it does |
-|---|---|
-| AWACS | Sees past the horizon for the whole fleet |
-| CAP | A fighter pair that hunts aircraft. It is also the answer to stand-off raids, which appear only once the fleet has air cover |
-| Strike flight | Attack aircraft that hit the nearest enemy group on a cooldown |
+- **Gap-filling.** At least one offer brings something the fleet lacks (guns,
+  SAMs, anti-ship missiles, CIWS, air cover, AWACS or air strike) when the
+  tier has one, and the card says what it adds. A fleet with no aircraft is
+  therefore usually offered at least one flight.
+- **Ships** spawn 1.5 nm abeam of the flagship, at its speed and weapons
+  status, as ordinary ships in your task force under your command.
+- **Flights** spawn airborne abeam of the flagship, in your task force. There
+  is no carrier to land on, so they fly on unlimited fuel and never head home.
+  Whenever a flight has no waypoints it circles the flagship at 5 nm; any
+  order you give comes first.
+- **What flights change.** A fighter adds 4 to the fleet's anti-air score
+  and unlocks stand-off raids (air cover). Aircraft are left out of the
+  anti-missile score and of the fleet's reach for spawning ships.
+- **Upgrades and rearming.** Everything that joins takes every rank the run
+  has, and every level-up rearms it with the rest of the fleet. Aircraft
+  weapons go through the same lines: air-to-air missiles through the SAM
+  line, anti-ship missiles through the anti-ship line. Kills by anything in
+  the fleet earn XP.
+- **Losing.** Only the flagship's loss ends the run; reinforcements are
+  firepower, not extra lives. The mod ends the mission itself, because the
+  mission's own trigger waits for every player ship.
 
 ---
 
 ## Enemies
 
-**Enemies never get individually stronger. They only get more numerous**,
-through the script's quotas.
+**Enemies never get individually stronger. They get vastly more numerous,
+and the mix shifts towards the dangerous ones**, with the clock alone. A
+strong build gets ahead of the curve; it does not make the curve steeper.
 
-The script has one row per minute. Each row sets four things:
+Two streams, after Vampire Survivors and Risk of Rain 2 (see
+[Script.cs](src/SeapowerSurvivors/Script.cs)):
 
-- **a menu** of groups the director may send;
-- **a quota** of enemy units it keeps alive, topped up as they die;
-- **a minimum interval** between sends;
-- **anything scripted** for the top of the minute.
+- **Fodder: Vampire Survivors' wave minimum.** Each minute keeps a floor of
+  cheap boats alive, sending another group every 3 seconds (real time) on its
+  own bearing while below it. The floor climbs 6 → 28 over the run, dipping
+  at boss minutes for a breather as Vampire Survivors does. What counts as
+  fodder moves up the ladder: patrol boats, then torpedo boats, then
+  Komars and Osas (Soviet) or Penguin and Exocet boats (NATO).
+- **Threats: Risk of Rain 2's combat director.** A budget of credits accrues
+  with the clock: 12 in the first minute, compounding 20% a minute, so the
+  last minute earns about 13 times the first. Every 30 seconds a wave spends
+  it on dangerous groups at their cost (roughly their XP: an Osa pair 8, a
+  Kresta-class threat 25), up to six groups, each on its own bearing so their
+  salvos land together. When a group's bigger pack is affordable it buys
+  that instead (Osa pair → pack of six, Yak pair → swarm of six), the way
+  Risk of Rain 2 buys elites. Unspent credits are banked, up to a minute and
+  a half of income.
+- **Events** land at the top of a minute: swarms, and **rings**, a wall of
+  eight boats on eight bearings closing at once.
+- **Caps.** At most 40 enemy units alive (Risk of Rain 2's limit), up from
+  16. *To check in play: whether Sea Power holds its frame rate at that.*
 
-| Minute | Quota | Scripted |
+| Minute | Fodder floor | Scripted (Soviet) |
 |---|---|---|
-| 0–2 | 2 → 4 | Patrol boats, torpedo boats, Komars |
-| 3 | 4 | Mini-boss: Kashin |
-| 5 | 6 | Osa pack: six boats on one bearing |
-| 6 | 6 | Mini-boss: Tu-16 trio |
-| 8 | 7 | Yak-38 swarm |
-| 9 | 8 | Mini-boss: Kresta I |
-| 11 | 9 | Osa pack |
-| 12 | 9 | Mini-boss: Sovremenny |
-| 13 | 10 | Yak-38 swarm |
-| 14 | 12 | Everything |
+| 0–2 | 6 → 10 | — |
+| 3 | 6 | Mini-boss: Kashin |
+| 4–5 | 14 → 16 | Zhuk ring |
+| 6 | 10 | Mini-boss: Tu-16 trio |
+| 7–8 | 18 → 20 | Yak-38 swarm |
+| 9 | 12 | Mini-boss: Kresta I |
+| 10–11 | 22 → 24 | Stenka ring, Osa pack |
+| 12 | 14 | Mini-boss: Sovremenny |
+| 13–14 | 26 → 28 | Yak-38 swarm, Osa ring |
 
-**Mini-boss chests.** Each mini-boss sunk pays a chest. For now that is one
-level-up (three at a 20% chance); next, a choice of ships.
+**Mini-boss chests.** Each mini-boss sunk pays a chest: a choice of ships or
+aircraft, then one level-up (three at a 20% chance).
 
 ### Spawning
 
@@ -195,7 +226,7 @@ level-up (three at a 20% chance); next, a choice of ships.
   Aircraft airborne at once are capped at half the anti-air score. An air
   boss the fleet cannot face is replaced by a surface one.
 - **Stand-off raids** (Tu-16K, Tu-22M2, B-52G) also wait for air cover.
-- **Caps.** At most 16 enemy units are alive at once. Air groups are held
+- **Caps.** Air groups are held
   while more than 14 enemy missiles are in flight.
 
 ---
@@ -215,5 +246,5 @@ These were considered and dropped:
 ## Open questions
 
 1. **Escorts and XP:** do kills by joined ships and aircraft count fully as
-   yours?
+   yours? For now they do: every enemy sunk pays XP, whoever sank it.
 2. **Final boss:** what is its composition for each side?

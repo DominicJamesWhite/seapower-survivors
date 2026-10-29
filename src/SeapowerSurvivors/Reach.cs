@@ -33,7 +33,8 @@ static class Reach
     public static float PlayerReachNm(IEnumerable<ObjectBase> fleet, ObjectBase target)
     {
         float best = 0f;
-        foreach (var ship in fleet.Where(s => s != null && !s.IsDestroyed))
+        // Ships only: a strike flight's reach is wherever it is sent.
+        foreach (var ship in fleet.Where(s => s != null && !s.IsDestroyed && !s.IsAirUnit))
         {
             float weapon = AntiSurfaceRangeNm(ship);
             float horizon = HorizonNm(ship, target);

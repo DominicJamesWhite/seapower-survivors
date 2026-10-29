@@ -69,7 +69,10 @@ Faroes, with weapons Free.
 
 ## Test panel
 
-**Ctrl+F6** opens the test panel in any mission with a player ship. The game
+**Ctrl+F6** opens the test panel in any mission with a player ship. On the
+main menu, it launches a run instead, without a scenario: pick a flagship
+and any starting ships, then press *Launch*. The mod writes the mission file
+to `<persistent data>/SeapowerSurvivors/Survivors run.ini`. The game
 binds Ctrl+F3, Ctrl+F5 and Ctrl+F7; QuickStart takes Ctrl+F8;
 SeapowerMultiplayer takes Ctrl+F9 to Ctrl+F11. Windows swallows Ctrl+Shift+0.
 

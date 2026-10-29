@@ -13,8 +13,10 @@ sealed class Run
 
     /// <summary>The ship the run started with. Losing it ends the run.</summary>
     internal readonly ObjectBase Ship;
-    /// <summary>Every ship the upgrades apply to; the starting ship first.</summary>
+    /// <summary>Every ship and aircraft the upgrades apply to; the starting ship first.</summary>
     internal readonly List<ObjectBase> Fleet = new List<ObjectBase>();
+    /// <summary>The fleet's aircraft, with what each flight was chosen for.</summary>
+    internal readonly Dictionary<ObjectBase, Role> AirWing = new Dictionary<ObjectBase, Role>();
 
     internal float Xp;
     internal float XpIntoLevel;
@@ -23,6 +25,8 @@ sealed class Run
     /// <summary>Levels gained but not yet rearmed for. Rearming waits for the main thread.</summary>
     internal int RearmsPending;
     internal int Rerolls = Balance.RerollsPerRun;
+    /// <summary>Boss chests still to open, by the tier of ship or flight each offers.</summary>
+    internal readonly Queue<int> ShipChests = new Queue<int>();
     internal int Kills;
     internal int Intercepts;
 

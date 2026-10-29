@@ -140,6 +140,35 @@ Singleton<ObjectsManager>.Instance.createShip(variantRef, loadout, "wp_ptg_osa1"
 - **End the mission:** set `MissionManager.Instance._missionStatus`, then
   `_endMissionTime = missionElapsedTime + delay`.
 
+## Launching a mission from code
+
+This is how [Launcher.cs](../src/SeapowerSurvivors/Launcher.cs) starts a run
+without a scenario:
+
+- **Launch:** set `Globals.currentMissionFilePath` to any full path, then
+  call `MissionManager.DoLoad()`. This is what the Scenarios menu's Play
+  button does (`ScenarioMenuViewModel.PlayCommand`).
+  - The game's own Instant Action generator writes
+    `user/missions/_InstantAction.ini` and loads it the same way.
+  - The Encyclopedia button passes `LoadAction` coroutines to `DoLoad`;
+    they run during the load.
+- **Main menu only.** `DoLoad` loads the mission scene additively on top of
+  the menu's background scene.
+  - At the main menu, `MenuSystemViewModel` exists and `MissionManager`
+    does not. QuickStart uses the same test.
+- **The ini cache.** `Session` and `SceneCreator` read the mission file
+  uncached. The briefing, the camera and the terrain read it through the
+  cache, so a rewritten file needs `IniHandler.invalidateCache(path)`.
+- **Ship variants.** A vessel's `VariantReference` defaults to `Default`.
+  Every ship offered so far has a `Variant1` in its `_variants.ini`.
+- **The main-menu slot.** QuickStart takes the hidden Instant Action button:
+  - it patches `MainMenuViewModel.InstantActionEnabled` to return true;
+  - it relabels the button through `LanguageResourceHandler`;
+  - it catches the click with a prefix on the `MenuSystemViewModel.CurrentWindow`
+    setter.
+
+  A Survivors button needs a slot of its own.
+
 ## Level-up UI
 
 Use our own `NoesisView` on its own camera, with the XAML held in a string.

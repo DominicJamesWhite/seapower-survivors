@@ -7,8 +7,9 @@ using UnityEngine;
 namespace SeapowerSurvivors;
 
 /// <summary>
-/// The pick-one-of-three screen. It pauses the game for each banked level,
-/// one after another, and holds the pause until the last pick is made.
+/// The pick-one-of-three screen. It pauses the game for each boss chest's
+/// ship, then each banked level, one after another, and holds the pause
+/// until the last pick is made.
 /// </summary>
 public class LevelUpScreen : MonoBehaviour
 {
@@ -21,6 +22,9 @@ public class LevelUpScreen : MonoBehaviour
     static float resumeCompression = 1f;
 
     List<Upgrade> offer = new List<Upgrade>();
+    List<Escort> ships = new List<Escort>();
+    /// <summary>True while the cards are a boss chest's ships rather than upgrades.</summary>
+    bool choosingShip;
     GUIStyle title, card;
 
     void Update()
@@ -39,14 +43,10 @@ public class LevelUpScreen : MonoBehaviour
             catch (System.Exception e) { Entry.Log.LogError($"Rearm failed: {e}"); }
         }
 
-        if (Holding || run.PendingLevels <= 0) return;
+        if (Holding) return;
         // Nothing left to rank up: the levels still rearmed the fleet, which is reward enough.
-        if (Upgrades.Eligible(run).Count == 0)
-        {
-            run.PendingLevels = 0;
-            return;
-        }
-        Open(run);
+        if (run.PendingLevels > 0 && Upgrades.Eligible(run).Count == 0) run.PendingLevels = 0;
+        if (run.PendingLevels > 0 || run.ShipChests.Count > 0) Open(run);
     }
 
     void Open(Run run)
@@ -77,8 +77,9 @@ public class LevelUpScreen : MonoBehaviour
 
     void Roll(Run run)
     {
-        var pool = Upgrades.Eligible(run);
-        offer = pool.OrderBy(_ => Random.value).Take(Choices).ToList();
+        choosingShip = run.ShipChests.Count > 0;
+        if (choosingShip) ships = Escorts.Offer(run, run.ShipChests.Peek());
+        else offer = Upgrades.Eligible(run).OrderBy(_ => Random.value).Take(Choices).ToList();
     }
 
     void Pick(Run run, Upgrade upgrade)
@@ -87,10 +88,18 @@ public class LevelUpScreen : MonoBehaviour
         Next(run);
     }
 
+    void Pick(Run run, Escort escort)
+    {
+        try { Escorts.Join(run, escort); }
+        catch (System.Exception e) { Entry.Log.LogError($"Joining {escort.Type} failed: {e}"); }
+        Next(run);
+    }
+
     void Next(Run run)
     {
-        run.PendingLevels--;
-        if (run.PendingLevels > 0 && Upgrades.Eligible(run).Count > 0) Roll(run);
+        if (choosingShip) run.ShipChests.Dequeue();
+        else run.PendingLevels--;
+        if (run.ShipChests.Count > 0 || (run.PendingLevels > 0 && Upgrades.Eligible(run).Count > 0)) Roll(run);
         else
         {
             run.PendingLevels = 0;
@@ -111,20 +120,38 @@ public class LevelUpScreen : MonoBehaviour
         float top = Screen.height / 2f - CardHeight;
 
         GUI.Box(new Rect(left - 24f, top - 80f, width + 48f, CardHeight + 170f), GUIContent.none);
-        int shownLevel = run.Level - run.PendingLevels + 1;
-        string banked = run.PendingLevels > 1 ? $"   (+{run.PendingLevels - 1} more)" : "";
-        GUI.Label(new Rect(left, top - 70f, width, 44f), $"LEVEL {shownLevel}{banked}", title);
-
-        for (int i = 0; i < offer.Count; i++)
+        if (choosingShip)
         {
-            var upgrade = offer[i];
-            int next = run.RankOf(upgrade) + 1;
-            string rank = next == 1 ? "  NEW" : $"  rank {next}/{upgrade.MaxRank}";
-            var systems = run.Fleet.Where(s => s != null && !s.IsDestroyed).SelectMany(upgrade.Systems).Distinct().ToList();
-            string touches = upgrade.Kind == Kind.Crew ? "\n\nCrew" : systems.Count > 0 ? $"\n\n{string.Join(", ", systems)}" : "";
-            string text = $"<b>{upgrade.Name}</b>{rank}\n\n{upgrade.Describe(next)}{touches}";
-            if (GUI.Button(new Rect(left + i * (CardWidth + Gap), top, CardWidth, CardHeight), text, card))
-                Pick(run, upgrade);
+            GUI.Label(new Rect(left, top - 70f, width, 44f), "CHEST: REINFORCEMENTS JOIN YOUR FLEET", title);
+            for (int i = 0; i < ships.Count; i++)
+            {
+                var escort = ships[i];
+                string adds = Escorts.Adds(run, escort);
+                string kind = escort.IsAir ? (escort.Count > 1 ? $"{escort.Count} aircraft" : "Aircraft") : "Ship";
+                string footer = escort.IsAir ? "Unlimited fuel; circles the fleet when idle" : "Under your command; takes every upgrade";
+                string text = $"<b>{escort.Name}</b>  tier {escort.Tier}\n\n{kind}: {Escorts.Describe(escort.Roles)}" +
+                              (adds.Length > 0 ? $"\n\n{adds}" : "") + $"\n\n{footer}";
+                if (GUI.Button(new Rect(left + i * (CardWidth + Gap), top, CardWidth, CardHeight), text, card))
+                    Pick(run, escort);
+            }
+        }
+        else
+        {
+            int shownLevel = run.Level - run.PendingLevels + 1;
+            string banked = run.PendingLevels > 1 ? $"   (+{run.PendingLevels - 1} more)" : "";
+            GUI.Label(new Rect(left, top - 70f, width, 44f), $"LEVEL {shownLevel}{banked}", title);
+
+            for (int i = 0; i < offer.Count; i++)
+            {
+                var upgrade = offer[i];
+                int next = run.RankOf(upgrade) + 1;
+                string rank = next == 1 ? "  NEW" : $"  rank {next}/{upgrade.MaxRank}";
+                var systems = run.Fleet.Where(s => s != null && !s.IsDestroyed).SelectMany(upgrade.Systems).Distinct().ToList();
+                string touches = upgrade.Kind == Kind.Crew ? "\n\nCrew" : systems.Count > 0 ? $"\n\n{string.Join(", ", systems)}" : "";
+                string text = $"<b>{upgrade.Name}</b>{rank}\n\n{upgrade.Describe(next)}{touches}";
+                if (GUI.Button(new Rect(left + i * (CardWidth + Gap), top, CardWidth, CardHeight), text, card))
+                    Pick(run, upgrade);
+            }
         }
 
         float row = top + CardHeight + 20f;

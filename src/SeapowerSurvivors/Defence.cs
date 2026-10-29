@@ -23,7 +23,8 @@ static class Defence
     {
         float score = 0f;
         bool antiAirGuns = false;
-        foreach (var ship in run.Fleet.Where(s => s != null && !s.IsDestroyed))
+        // Ships only: a fighter's missiles are on its pylons, not between the fleet and a sea-skimmer.
+        foreach (var ship in run.Fleet.Where(s => s != null && !s.IsDestroyed && !s.IsAirUnit))
         {
             score += Boosts.SamLaunchers(ship).Count() * PerSamLauncher;
             score += ship._obp._ciwsWeapons.Sum(CiwsWorth);
@@ -54,6 +55,7 @@ static class Defence
 
     /// <summary>Thresholds for air groups: a pair of bombers, a strike package, a heavy raid.</summary>
     public const float AirLight = 3f, AirMedium = 6f, AirHeavy = 10f;
+    const float PerFighter = 4f;
 
     /// <summary>
     /// How well the fleet can shoot aircraft down. Aircraft are bigger and
@@ -66,6 +68,12 @@ static class Defence
         bool antiAirGuns = false;
         foreach (var ship in run.Fleet.Where(s => s != null && !s.IsDestroyed))
         {
+            // Each pylon would otherwise count as a SAM launcher; a fighter counts as one.
+            if (ship.IsAirUnit)
+            {
+                if (run.AirWing.TryGetValue(ship, out var role) && (role & Role.AirCover) != 0) score += PerFighter;
+                continue;
+            }
             score += Boosts.SamLaunchers(ship).Count() * 4f;
             // Mounts outnumber directors on old gun ships (a Sverdlov has six
             // 100 mm mounts on two Round Tops), so each mount counts for little.
