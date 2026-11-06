@@ -23,7 +23,13 @@ public class Entry : IAnchorChainMod
             host.AddComponent<Director>();
             host.AddComponent<LevelUpScreen>();
             host.AddComponent<TestPanel>();
+            host.AddComponent<MenuButton>();
             host.AddComponent<AaTrace>();
+            host.AddComponent<TorpedoTrace>();
+            host.AddComponent<MissileTrace>();
+            host.AddComponent<FireControlTrace>();
+            host.AddComponent<PerfMonitor>();
+            host.AddComponent<Autopilot>();
         }
         catch (Exception e)
         {

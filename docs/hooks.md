@@ -112,6 +112,22 @@ Singleton<ObjectsManager>.Instance.createShip(variantRef, loadout, "wp_ptg_osa1"
 - **Making enemies aware of the player:** `Utils.RevealContactToObject`.
 - **Despawning with no kill scored:** `destroyObject` with `score:false`.
 
+### What sinking ships leave behind
+
+- **Frame rate sets game speed.** Measured from the log, game time per frame
+  is capped at about compression ÷ 30 s, and physics at 10 fixed steps a frame
+  (`GameTime._physicsTimeScaleCap`). Below 30 fps the game itself runs slow.
+- **Life rafts** are full `Vessel`s, but their `Deco` role keeps them out of
+  `_listOfAllVesselObjects`. `Compartments.SpawnLifeRafts` is their only source;
+  during a run a prefix skips it.
+- **Wake bubbles** are `ObjectBase` objects in `_listOfAllObjects`, also outside
+  the type lists. `WakeBubble.init` reads `Globals.WakeBubbleParameters._lifetime`
+  (1160 s in `systems/sensors.ini`); during a run a prefix makes that 200 s.
+  `WakeSeeker` only asks that a bubble has life left.
+- **The tail bubble leaks.** Each moving ship has one with an infinite lifetime,
+  and nothing removes it when the ship dies. `Clutter.SweepWakes` removes
+  bubbles whose ship has sunk or gone.
+
 ## Kills and XP
 
 - **The death event.** Use a Harmony prefix and postfix on
@@ -169,6 +185,40 @@ without a scenario:
 
   A Survivors button needs a slot of its own.
 
+## Ensigns
+
+Read from code, build 0.8.4 Build 261002. **Not yet tested in game.** Numbers go
+through `Boosts.Apply`; what acts during the fight is in `EnsignCombat`.
+
+- **Damage.** `Blastzone.GetWeaponDamage` postfix covers warheads on ships and
+  aircraft. Shells on aircraft go through `CiwsBallistics.VariedHitDamage`, flagged
+  by a `Projectile.ProcessCollision` prefix, as Critical hits does.
+- **No harm.** An `OnHitUnit` prefix returning false records no impact, so
+  `CheckForInstakill` has nothing to drain from the hidden pool either.
+- **Gas.** The `Blastzone(Projectile, Vector3)` constructor gives where a shell
+  came down. Clouds drain `_limitIntegrity` directly, then sink the ship the way
+  `CheckForInstakill` does, by setting `_delayedSinkTime`.
+- **EMP.** A `CreateExplosion` prefix replaces the mortar round's blast. Radars get
+  `Inoperable`, and the ship is held on weapons hold; `Spawner.Alert` skips it.
+- **Ship speed.** `VP._maxForwardVelocityInKnots` and `VP._telegraphVelocities`,
+  which `Compartments` holds by reference. Ship parameters are per ship
+  (`VesselLoader` makes a new one).
+- **CIWS reach.** Round range, then `_maxRangeSq` and `_sigmaFcsMissileMrad` set to
+  −1 so it recalculates and refits its hit model. Tracer life is capped at 8 s.
+- **Wire.** `_midCourseCorrection`, `_wireBreakSpeedInKnots`, `_maxWireCount`;
+  `BreakWire()` once `_remainingRangePercent` reaches 50.
+- **Jamming** (`EcmFit`). `new SensorSystemECM(ship, "AN/ALQ-99", mount)` on a
+  dummy mount, as `WeaponBase` makes missile jammers. It is added to `_systems`,
+  `_sensorSystems` and `_systemsDictionary`, then `init()`, which fills
+  `_ecmSystems`. Aiming is the stock `JamTask`, read back from `_associatedTarget`
+  or `_associatedTargetPosition`. A prefix replaces `SensorSystemECM.OnFixedUpdate`
+  with a once-a-second pass that skips the horizon check, fills
+  `_ECMSystemsTryingToJamMe`, and calls `ECM.jamWeapon` for missiles in the cone.
+  Stock, that roll only runs within 3 nm of the missile's target
+  (`Missile.CalculateDeviation`), and that path still works, aimed or not.
+- **Flags** are one `Texture2D` used by IMGUI directly and by Noesis through
+  `TextureSource`.
+
 ## Level-up UI
 
 Use our own `NoesisView` on its own camera, with the XAML held in a string.
@@ -201,8 +251,10 @@ holds a `MemberwiseClone` of it.
 | Salvo doctrine | `TacticalDoctrine.AASalvoSize` | |
 | Decoys | Our chaff clone `_ap._decoySpoofChance` | Chaff reload is the private `WeaponSystemChaff._reloadTime` |
 | Missile range | `_ap._launchRangesInUnity.y`, `_maxLaunchRangeInMiles`, `_maxFlightTime` | For `ApplyKinematics` missiles also set `_dragCoefficient = cached ÷ k`, which bypasses `KinematicsCache` |
+| Missile / torpedo speed | `_maxVelocityInKnots`, `_terminalVelocityInKnots`, `_maxLoftVelocityInKnots`, `_searchVelocityInKnots`, thrust; to keep the path the same shape, turn rates (incl. `_terminalVerticalTurnRate`) and `_ladderTurnDegreesPerSecond` ×speed, `_maxTurnG` ×speed², and `_snakeSearchTurnCycleTime`, `_turnDelay` (wake homing) ÷speed | Anything timed in seconds draws a wider path at speed. `WeaponBase.CheckCollision` ignores hits for 1 s after `_launchTime`, a hard-coded value: prefix it (`Boosts.ArmAtSpeed`) |
+| Mortars | `_launchRangesInUnity.y`, `_maxLaunchRangeInMiles`, `_maxVelocityInKnots`, `_acceleration`, `_initialFlightPhaseDuration` ÷speed, `_acceleration` ×speed², on our clones | The AI will not fire them far: see `Mortars`, which queues `InsertEngageTask` itself, drops them from `AI.AmmoForTarget` and transpiles `CheckIfAlreadyHandled`. `_magazineReloadTime` alone does not reload them faster: prefix `ObjectCodeAnimation.update` and move private `_animationStartTime` back. Postfix `RBU.Launch.takeAction` for the lead and aiming error, once a round as `_flightStage` turns to `TerminalApproach`. Postfix `RBU.TerminalApproach.takeAction` to steer. Both set `_estimatedInterceptTargetPosition` and turn `transform.forward` |
 | Missile / SAM reload | `_vwp._magazineReloadTime`, `_fireRatePerMinute` | Vertical-launch cells only benefit on their next firing |
-| Gun rate of fire | Private `WeaponSystemGun._shellReloadTime`, `_delayBetweenShotsinBurst` | Computed at spawn |
+| Gun rate of fire | Private `WeaponSystemGun._shellReloadTime`, `_delayBetweenShotsinBurst`, `_burstDelay` (a gun with `_burstCount` > 1 reads only the last two: AK-726, AK-130, Mk 28, ZIF-75); ready-rack reload `_vwp._magazineReloadTime`; shell speed `_muzzleVelocityInUnity` with `_gravity` ×speed² | Computed at spawn. The fire table is cached per ammo name, so boosted shells get their own |
 | Gun damage | `_ap._power` on our shell clones | Confirm the field name |
 | Deep magazines | `WeaponMagazineSystem._initialAmmoCount[ammo]` plus `increaseAmmunitionCount` | |
 | Ammo refill (pickups) | `WeaponMagazineSystem.RefillAmmo`, `WeaponContainer.RefillAmmo` | Test against preloading launchers |

@@ -44,7 +44,31 @@ at, and so does the director's `Role` in `sensors.ini`.
   - Spruance's MK-95 is `Role=Air`, so its Sea Sparrows cannot be fired at
     ships.
 - **Anti-submarine only:** ASROC and SS-N-14A. Kresta II therefore has no
-  anti-ship missile.
+  anti-ship missile. The Torpedoes line's first rank lets ours target ships;
+  the torpedo each drops is its own clone (the game's is shared by every
+  carrier of that kind), so the line's ranks reach it too.
+- **What a torpedo can fire at is not what its seeker can see.** In
+  `SeekerBase.isDetectable`, active-sonar seekers (SET-65, Mk 44, UMGT-1, APR-2)
+  take only submerged contacts. In spiral search (AT-2, AT-1, Mk 44, Mk 46 air,
+  L3, UMGT-1, APR-2) sonar seekers skip any contact outside `SpiralSearchParams`,
+  and a surface ship is above that band. `Boosts` lifts both for ours: active sonar
+  hears ships, and a torpedo that can take ships searches in a snake instead.
+- **Wake homing is on fixed times.** `TurnDelay` holds the turn for seconds after
+  each crossing and `WakeSeeker` caps its reach at 0.25 nm, so a fast torpedo
+  overran the wake. `TerminalApproach` also writes 20°/s into the shared
+  parameters. Ours scale the delay and keep the scaled turn rate.
+- **Wires:** the game caps speed on the wire only at launch and by picking a slower
+  speed setting, so a single-speed torpedo snaps its wire once it passes the limit.
+  `AI.AutoAttackSalvoSize` fires wire-guided torpedoes singly. Under the Swedish
+  ensign, `EnsignCombat` holds ours to the limit and keeps the salvo of three.
+
+- **Rocket mortars:** RBUs are anti-submarine with `SecondaryTargetType=ASuW`,
+  but auto-engage treats them as last resort. Ships are second choice after
+  every primary launcher; past 10 nm they are refused
+  (`AI.AutoAttackOpponentInRange`, the `magnitude > 275.59` test), and against torpedoes
+  past 1 nm. One in flight or tasked at a target makes `CheckIfAlreadyHandled`
+  return true at once, for the whole taskforce. `Mortars` takes ours away from
+  all of this.
 
 ## Fire control is the bottleneck
 
@@ -186,6 +210,17 @@ Target RCS in m² (`[RCS]` in `sensors.ini`):
    - fire-rate delay;
    - shared launch interval (Harpoon: 5 s).
 
+   **Reloads and the arm.** A magazine launcher's load cycle
+   (`updateLoadSystem`: swing to the magazine, load, back to idle) runs
+   beside its reload timer, and for most launchers the timer alone ends the
+   reload. With `ForceMoveToLoadPosition` (Mk 26, 7 s) the timer waits for
+   the arm, but only after 2 s. A reload made shorter than that ends with the
+   arm still moving. The engagement then aims the arm at the target while
+   the load cycle aims it at the magazine, and the launcher sits on
+   "Aligning launcher" until something reloads it again. Only RBUs and
+   lower-deck launchers wait for the cycle to finish. Our fleet's launchers
+   wait too (`Boosts.ReloadWaitsForArm`).
+
    Acquisition time ladder (`sensors.ini [TargetAquisitionTime]`):
 
    | Speed | VerySlow | Slow | Medium | Fast | VeryFast |
@@ -197,6 +232,26 @@ Target RCS in m² (`[RCS]` in `sensors.ini`):
 - **Flight profile:** loft, then sea-skim from `SeaSkimmingStartDistToTarget`,
   then terminal altitude, with an optional pop-up. Selective pop-up only
   happens against ships over 420 t.
+- **Two flight models** (`Missile.PerformMoveForward`):
+  - **Legacy** (Harpoon, Soviet anti-ship missiles): the motor accelerates
+    the missile up to `MaxVelocity` and holds it there, or at
+    `TerminalVelocity` once it is on its terminal approach.
+  - **Kinematic** (`ApplyKinematics=True`: every SAM and air-to-air missile,
+    some air-launched anti-ship missiles): speed is booster and sustainer
+    thrust less drag, which grows with speed². `MaxVelocity` is never
+    consulted. Unless `DragCoefficient` is set, drag is calibrated so the
+    missile just reaches its launch range, and cached by ammo name
+    (`KinematicsCache`), shared by every unit firing that round.
+- **Turn rate is in degrees a second**, cut further by `MaxTurnG`
+  (`WeaponBase.setCourseTowardsPosition`), so the turning circle grows
+  with speed. A Harpoon at 15°/s turns in about 1 km at 540 kn and 7 km
+  at 3,500 kn, too wide to correct onto a ship after the seeker locks.
+  Hits are swept from the last position to the new one each tick, so speed
+  alone does not make a missile pass through a ship.
+- **On the terminal run, `TerminalVerticalTurnRate` replaces the turn rate**
+  for both pitch and course (`WeaponBase.setHeight`,
+  `setCourseTowardsPosition`). Unset, it defaults to `MaxTurnRate`.
+- **A missile below sea level (y < 0) is destroyed** (`Missile.OnUpdateEveryFrame`).
 - **Active-radar seekers lock the strongest echo** (RCS ÷ R²) among **all**
   ships in view, ignoring which side they are on
   (`ActiveRadarSeeker.searchForTarget`). After 180 s active, a seeker may
@@ -205,6 +260,9 @@ Target RCS in m² (`[RCS]` in `sensors.ini`):
 - **Semi-active (SARH) missiles** home only on their commanded target while the
   director keeps guiding them. If guidance is lost, they self-destruct.
 - **Chaff** (`SeekerBase.CheckCountermeasureLock`):
+  - An `_antiChaffBonus` above 0.999 makes the check fail for **every** object,
+    ships included, so the seeker never locks anything. `_antiJammerBonus`
+    above 0.999 does mean immune to jamming (`ECM.tryToJamAttackingWeapon`).
   - One roll per seeker every 35 s.
   - Chance = `_decoySpoofChance` × the difficulty modifier, minus the
     missile's `_antiChaffBonus`.
@@ -214,6 +272,38 @@ Target RCS in m² (`[RCS]` in `sensors.ini`):
   - One roll per missile, inside 3 nm, and only if the jammer's band covers
     the seeker.
   - A jammed missile is a guaranteed miss.
+
+## Mortar rounds
+
+`RBU`. The launcher fires at `FixVerticalLaunchAngle` (35° by default, up to the
+mount's `ElevationArc`) and empties its container in a salvo, each round aimed
+at a point on a circle around the target (`SalvoFireTargetAreaCircleRadius`).
+For `InitialFlightPhaseDuration` (1 s) a round accelerates and yaws onto its
+lead point. Then it is ballistic, under a gravity fitted to its speed and the
+remaining range (`Ballistics.rangeToGravity`) and refitted every 0.5 s, so **any
+range and any speed land on the aim point**; only `_launchRangesInUnity.y` limits
+it. There is no yaw after the first second, and the lead uses full speed though
+the round climbs. It detonates when it sinks to the target's height, with a
+`VeryLarge` blast (120 m, against every ship within it): power 14 for an RGB-60,
+30 for an RGB-10, halved for fragmentation, so about 15 of the hidden pool a
+round. `MaxFlightTime` is only read by `Missile`. A round has no thrust after
+the first phase, so whatever speed it has at the end of it, it keeps.
+
+**Reloading is the animation.** `ReloadTime` is set just past the length of the
+launcher's load animation (`animations/animations_rbu-6000.ini`: rounds spawn
+at 122 s of 124 s, against `ReloadTime=127`; RBU-1000: about 61 s, against 64),
+and `WeaponSystem.OnUpdate` holds the reload open until the load cycle is idle.
+Shortening `_magazineReloadTime` alone does nothing.
+
+**A rearm empties them.** `WeaponSystemLauncher.RefillAmmo` destroys the rounds,
+keeps `_ammunitionOnWeapon` and ends the reload at once, and a launcher with a load
+animation reseats nothing when a reload ends. The next engagement then plays the
+unload and the load animations, about 248 s on an RBU-6000, while the expired timer
+is held at 1 s (`WeaponSystem.OnUpdate`). `RbuRearm` reseats ours at once. An
+RBU-1000 has no unload animation, so it waits about 61 s. Across all vessels, only
+`Type=RBU` launchers have load animations over 1 s. Missile rails (Mk 10, 11, 13, 26,
+SA-N-1, 3, 7) take the same path, but with 1 s animations and no hold on the timer.
+Preloaded launchers without an animation reseat as the instant reload ends.
 
 ## Interception
 

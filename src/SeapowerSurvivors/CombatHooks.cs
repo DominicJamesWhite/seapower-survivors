@@ -39,6 +39,8 @@ static class CombatHooks
             bool score = __0;
             if (__state || !__instance.IsDestroyed || !score || !__instance.isUnit()) return;
             if (__instance._taskforce != Globals._enemyTaskforce) return;
+            // A sunk ship's life raft counts as a unit, but sinking it is no feat.
+            if (__instance._obp?._objectIniName?.Contains("life_raft") == true) return;
 
             var run = Run.Current;
             float xp = Progression.ForUnit(__instance);
@@ -53,24 +55,76 @@ static class CombatHooks
         }
     }
 
-    [HarmonyPatch(typeof(Blastzone), "OnHitUnit")]
-    static class BlastHit
+    static readonly AccessTools.FieldRef<Blastzone, WeaponBase> BlastWeapon =
+        AccessTools.FieldRefAccess<Blastzone, WeaponBase>("_weapon");
+
+    static bool Alive(ObjectBase o) => o != null && !o.IsDestroyed && !o._externalDestructionNotified;
+
+    /// <summary>True for a blast from one of our SAMs: a missile fired at an air target.</summary>
+    static bool OurSam(Blastzone blast) =>
+        IsOurs(BlastLaunchPlatform(blast)) && BlastWeapon(blast) is Missile m && m._ap._targetType == Ammunition.Target.AAW;
+
+    /// <summary>
+    /// Weapons a blast destroys: a SAM's intercept, and its splash. OnHitUnit
+    /// only ever sees ships, aircraft and the like, so missiles land here.
+    /// </summary>
+    [HarmonyPatch(typeof(Blastzone), "OnHitWeapon")]
+    static class BlastHitWeapon
     {
-        static void Prefix(Blastzone __instance, object __0)
+        static void Prefix(Blastzone __instance, WeaponBase __0, out bool __state)
         {
-            if (IsEnemyWeapon(__0) && IsOurs(BlastLaunchPlatform(__instance)))
-                struckMissiles.Add(((ObjectBase)__0).UniqueID);
+            __state = Alive(__0);
+            if (__state && IsEnemyWeapon(__0) && IsOurs(BlastLaunchPlatform(__instance)))
+                struckMissiles.Add(__0.UniqueID);
+        }
+
+        static void Postfix(Blastzone __instance, WeaponBase __0, bool __state)
+        {
+            if (__state && !Alive(__0) && IsEnemyWeapon(__0) && OurSam(__instance)) Abilities.SamKill(__0);
+        }
+    }
+
+    /// <summary>An aircraft our SAM brings down: the huge blast goes off there too.</summary>
+    [HarmonyPatch(typeof(Blastzone), "OnHitUnit")]
+    static class BlastHitUnit
+    {
+        static void Prefix(object __0, out bool __state) => __state = __0 is ObjectBase o && o.IsAirUnit && Alive(o);
+
+        static void Postfix(Blastzone __instance, object __0, bool __state)
+        {
+            var target = (ObjectBase)__0;
+            if (__state && !Alive(target) && target._taskforce == Globals._enemyTaskforce && OurSam(__instance))
+                Abilities.SamKill(target);
         }
     }
 
     [HarmonyPatch(typeof(WeaponSystemCIWS), nameof(WeaponSystemCIWS.InterceptAirTarget))]
     static class CiwsHit
     {
-        static void Prefix(WeaponSystemCIWS __instance, object __0)
+        static void Prefix(WeaponSystemCIWS __instance, object __0, out bool __state)
         {
-            if (IsEnemyWeapon(__0) && IsOurs(__instance._baseObject))
-                struckMissiles.Add(((ObjectBase)__0).UniqueID);
+            var target = __0 as ObjectBase;
+            // The game returns early for a target already dying; only a real kill counts.
+            __state = Alive(target) && IsOurs(__instance._baseObject) && target._taskforce == Globals._enemyTaskforce;
+            if (__state && IsEnemyWeapon(target)) struckMissiles.Add(target.UniqueID);
         }
+
+        static void Postfix(object __0, bool __state)
+        {
+            if (__state) Abilities.CiwsKill((ObjectBase)__0);
+        }
+    }
+
+    /// <summary>
+    /// Destroys an enemy missile or aircraft the way the game's own kills do.
+    /// A missile pays intercept XP when it goes; an aircraft pays through
+    /// UnitKilled, as any other kill.
+    /// </summary>
+    internal static void Destroy(ObjectBase target)
+    {
+        if (!Alive(target)) return;
+        if (target is WeaponBase) struckMissiles.Add(target.UniqueID);
+        target.notifyOfExternalDestruction();
     }
 
     /// <summary>
@@ -101,7 +155,66 @@ static class CombatHooks
         }
     }
 
-    internal static void Reset() => struckMissiles.Clear();
+    internal static void Reset()
+    {
+        struckMissiles.Clear();
+        launchesSeen.Clear();
+    }
+
+    static readonly System.Collections.Generic.HashSet<Missile> launchesSeen = new System.Collections.Generic.HashSet<Missile>();
+
+    /// <summary>Logs each enemy anti-ship missile once, when first seen: the only record of what the enemy really fired.</summary>
+    internal static void LogEnemyLaunches(ObjectBase flagship)
+    {
+        launchesSeen.RemoveWhere(m => m == null || m.IsDestroyed);
+        foreach (var missile in AntiShipInFlight().ToList())
+            if (launchesSeen.Add(missile))
+                Entry.Log.LogInfo($"Enemy launch: {missile._ap._ammunitionFileName} from {missile._launchPlatform?.Name.Value ?? "unknown"}, " +
+                                  $"{missile._geoPosition.getDistanceInMiles(flagship._geoPosition):F1} nm from the flagship, {launchesSeen.Count} in the air");
+    }
+
+    /// <summary>
+    /// Enemy missiles in the air and aimed at ships: anti-ship missiles, and SAMs
+    /// fired in their surface mode, which the game lets the enemy use freely.
+    /// </summary>
+    static System.Collections.Generic.IEnumerable<Missile> AntiShipInFlight() =>
+        Singleton<ObjectsManager>.Instance._listOfAllObjects.OfType<Missile>()
+            .Where(m => !m.IsDestroyed && m._taskforce == Globals._enemyTaskforce && (Boosts.AntiShipMissile(m._ap) || SamAtShip(m)));
+
+    static bool SamAtShip(Missile missile)
+    {
+        var target = missile.CurrentIntendedTargetObject;
+        return missile._ap._hasSecondaryTargetType && missile._ap._secondaryTargetType == Ammunition.Target.ASuW &&
+               target != null && !target.isAirTarget() && !(target is WeaponBase);
+    }
+
+    /// <summary>
+    /// A ship held to guns only keeps its SAMs for aircraft, but may not fire them
+    /// at ships. The game's rule against that applies only to the player's ships,
+    /// so a disarmed Belknap would otherwise still throw Standards at a gun cruiser.
+    /// </summary>
+    [HarmonyPatch(typeof(AI), "ShipSAMAntiSurfaceAutoEngagementBlocked")]
+    static class NoSamsAtShipsWhenDisarmed
+    {
+        static void Postfix(ObjectBase ____baseObject, AmmunitionParameters ap, ObjectBase targetObject, ref bool __result)
+        {
+            if (__result || ap == null || targetObject == null || targetObject.isAirTarget() || targetObject is WeaponBase) return;
+            if (ap._type == Ammunition.Type.Missile && ap._targetType == Ammunition.Target.AAW && Director.IsDisarmed(____baseObject))
+                __result = true;
+        }
+    }
+
+    internal static int IncomingAntiShip() => AntiShipInFlight().Count();
+
+    /// <summary>How near any enemy anti-ship missile is to any of these ships; infinite with none in the air.</summary>
+    internal static float ClosestAntiShipNm(System.Collections.Generic.List<ObjectBase> ships)
+    {
+        float closest = float.PositiveInfinity;
+        foreach (var missile in AntiShipInFlight())
+            foreach (var ship in ships)
+                closest = System.Math.Min(closest, (float)missile._geoPosition.getDistanceInMiles(ship._geoPosition));
+        return closest;
+    }
 
     internal static int IncomingMissiles() =>
         Singleton<ObjectsManager>.Instance._listOfAllObjects

@@ -42,18 +42,18 @@ sealed class Escort
 /// ends the run.
 /// </summary>
 /// <remarks>
-/// Flights have no carrier to go home to, so they fly on unlimited fuel and,
-/// whenever they have no orders, circle the flagship. With no home base the
+/// Flights have no carrier to go home to, so they fly on unlimited fuel and
+/// are left to the game's own routing when idle. With no home base the
 /// game never sends them back for fuel or for running out of weapons; level-ups
-/// rearm them in the air with the rest of the fleet.
+/// rearm them in the air with the rest of the fleet (see <see cref="Pylons"/>).
 /// </remarks>
 static class Escorts
 {
     const int Offers = 3;
     /// <summary>Joining ships appear this far from the flagship, abeam of it.</summary>
     const float JoinDistanceNm = 1.5f;
-    /// <summary>Idle flights circle the flagship at this distance, a sixth of the circle per leg.</summary>
-    const float StationNm = 5f, StationLegDeg = 60f;
+    /// <summary>Game time between air resupplies once the Air wing line has it, before its ranks shorten it.</summary>
+    internal const float ResupplySeconds = 240f;
 
     static readonly Escort[] Us =
     {
@@ -128,10 +128,13 @@ static class Escorts
     /// <summary>The ships and flights of the flagship's own navy.</summary>
     internal static Escort[] NavyOf(string flagshipType) => flagshipType.StartsWith("wp_") ? Soviet : Us;
 
-    /// <summary>Three ships or flights of the tier, the first chosen to bring something the fleet lacks, if any does.</summary>
-    internal static List<Escort> Offer(Run run, int tier)
+    /// <summary>
+    /// Three ships or flights of the tier, the first chosen to bring something
+    /// the fleet lacks, if any does. A reroll passes the cards it replaces, to lean away from them.
+    /// </summary>
+    internal static List<Escort> Offer(Run run, int tier, ICollection<Escort> shown = null)
     {
-        var pool = NavyOf(run.Ship._obp._objectIniName).Where(e => e.Tier == tier).OrderBy(_ => UnityEngine.Random.value).ToList();
+        var pool = LevelUpScreen.Shuffled(NavyOf(run.Ship._obp._objectIniName).Where(e => e.Tier == tier), shown).ToList();
         var missing = Role.Sams | Role.Guns | Role.AntiShip | Role.Ciws | Role.AirCover | Role.Awacs | Role.AirStrike;
         missing &= ~FleetRoles(run);
         var offer = new List<Escort>();
@@ -155,15 +158,27 @@ static class Escorts
     /// <summary>Spawn the ship or flight beside the flagship, under the player's command, with every upgrade the run has taken.</summary>
     internal static void Join(Run run, Escort escort)
     {
+        // The Greek ensign: the first escort taken comes as five, and is the last.
+        if (run.Hoisted.Contains(Ensigns.FiveOfAKind) && !run.EscortChosen)
+        {
+            run.EscortChosen = true;
+            run.ShipChests.Clear();
+            for (int i = 0; i < Ensigns.EscortCopies; i++) Join(run, escort);
+            return;
+        }
         if (escort.IsAir)
         {
             JoinFlight(run, escort);
             return;
         }
         var flagship = run.Ship;
-        float bearing = (flagship.transform.eulerAngles.y + (UnityEngine.Random.value < 0.5f ? 90f : -90f) + 360f) % 360f;
-        var at = Spawner.Offset(flagship._geoPosition, JoinDistanceNm, bearing);
-        var ship = Spawner.Ship(escort.Type, at, flagship.transform.eulerAngles.y, Globals._playerTaskforce);
+        // Off either beam, whichever is open water, or astern in a channel too narrow for both.
+        float course = flagship.transform.eulerAngles.y;
+        float side = UnityEngine.Random.value < 0.5f ? 90f : -90f;
+        var spots = new[] { course + side, course - side, course + 180f }
+            .Select(b => Spawner.Offset(flagship._geoPosition, JoinDistanceNm, (b + 360f) % 360f)).ToList();
+        var at = spots.Where(Sea.IsWater).DefaultIfEmpty(spots[2]).First();
+        var ship = Spawner.Ship(escort.Type, at, flagship.transform.eulerAngles.y, Globals._playerTaskforce, Launcher.FitOf(escort.Type) ?? "default");
         if (ship == null)
         {
             TestPanel.Report($"Could not spawn {escort.Name} ({escort.Type})");
@@ -180,7 +195,7 @@ static class Escorts
     {
         var flagship = run.Ship;
         float heading = flagship.transform.eulerAngles.y;
-        int joined = 0;
+        int joined = 0, stores = 0;
         for (int i = 0; i < escort.Count; i++)
         {
             // Abreast, a mile apart, off the flagship's starboard beam.
@@ -191,6 +206,7 @@ static class Escorts
             aircraft._weaponStatus = flagship._weaponStatus;
             run.Fleet.Add(aircraft);
             run.AirWing[aircraft] = escort.Roles;
+            stores += Pylons.Note(aircraft);
             joined++;
         }
         if (joined == 0)
@@ -201,24 +217,52 @@ static class Escorts
         // Fighters are what reach stand-off bombers, so their raids may now come.
         if ((escort.Roles & Role.AirCover) != 0) run.Has.Add(Capability.AirCover);
         Boosts.ApplyFleet(run);
-        TestPanel.Report($"{escort.Name} joins the fleet ({joined}/{escort.Count} aircraft)");
+        TestPanel.Report($"{escort.Name} joins the fleet ({joined}/{escort.Count} aircraft, {stores} stores)");
+    }
+
+    internal static void Tend(Run run)
+    {
+        Resupply(run);
+        Refits.Tend(run);
+        TendDeckAircraft(run);
     }
 
     /// <summary>
-    /// Flights with nothing to do circle the flagship, a leg at a time, at
-    /// their own height. Anything the player orders comes first: a flight is
-    /// sent back only once it has no waypoints left.
+    /// Aircraft the player launches from a fleet ship's own deck (a Kiev's)
+    /// are fleet as they appear, so every upgrade reaches them as it does a
+    /// chest flight. They are not the air wing: they go home to rearm, and
+    /// the game hangs fresh rounds on them there, so the upgrades are written
+    /// in again every tick.
     /// </summary>
-    internal static void Tend(Run run)
+    static void TendDeckAircraft(Run run)
     {
-        var flagship = run.Ship;
-        foreach (var aircraft in run.AirWing.Keys)
+        run.Fleet.RemoveAll(s => s == null);
+        var deck = Singleton<ObjectsManager>.Instance._listOfAllPlayerAircraftObjects
+            .Where(a => a != null && !a.IsDestroyed && !run.AirWing.ContainsKey(a) && a._homeBase != null && run.Fleet.Contains(a._homeBase))
+            .ToList();
+        if (deck.Count == 0) return;
+        foreach (var aircraft in deck.Where(a => !run.Fleet.Contains(a)))
         {
-            if (aircraft == null || aircraft.IsDestroyed || aircraft.Aligning || aircraft.HasWaypoints()) continue;
-            float bearing = flagship._geoPosition.HeadingToPosition(aircraft._geoPosition);
-            var station = Spawner.Offset(flagship._geoPosition, StationNm, (bearing + StationLegDeg) % 360f);
-            station._height = aircraft._geoPosition._height;
-            aircraft.setWaypointTask(station);
+            run.Fleet.Add(aircraft);
+            Entry.Log.LogInfo($"{aircraft.Name.Value} ({aircraft._obp._objectIniName}) from {aircraft._homeBase.Name.Value}'s deck joins the fleet");
         }
+        Boosts.ApplyTo(run, deck);
+    }
+
+    /// <summary>
+    /// Air resupply, from the Air wing line: every few minutes the air wing's
+    /// pylons are rehung as a level-up rehangs them, with the run's upgrades
+    /// written into the fresh rounds. The first comes as soon as it is taken.
+    /// </summary>
+    static void Resupply(Run run)
+    {
+        if (!Upgrades.Has(run, Upgrades.AirWing, Stat.Resupply)) return;
+        double now = SeaPower.GameTime.missionElapsedTime;
+        if (now - run.LastResupply < ResupplySeconds * Upgrades.Total(run, Upgrades.AirWing, Stat.Reload)) return;
+        run.LastResupply = now;
+        int stores = run.AirWing.Keys.Sum(Pylons.Reload);
+        if (stores == 0) return;
+        Boosts.ApplyFleet(run);
+        TestPanel.Report($"Air resupply: {stores} store(s) hung on the air wing's pylons");
     }
 }

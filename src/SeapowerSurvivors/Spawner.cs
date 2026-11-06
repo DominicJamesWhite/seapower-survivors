@@ -12,18 +12,19 @@ namespace SeapowerSurvivors;
 static class Spawner
 {
     const float KnotsToUnity = 0.0076554087f;
-    const double FeetToUnity = 0.004535709857940674;
+    internal const double FeetToUnity = 0.004535709857940674;
     /// <summary>Full ahead. A run is fifteen minutes; there is no time to arrive at a third of it.</summary>
     const int FlankTelegraph = 5;
 
-    internal static Vessel Ship(string type, GeoPosition at, float heading, Taskforce side)
+    internal static Vessel Ship(string type, GeoPosition at, float heading, Taskforce side, string fit = "default")
     {
         var objects = Singleton<ObjectsManager>.Instance;
-        var ship = objects.createShip("random", "default", type, objects._listOfAllObjects.Count + 1,
+        var ship = objects.createShip("random", fit, type, objects._listOfAllObjects.Count + 1,
             Singleton<SceneCreator>.Instance.GeoCenterPosition, at, FlankTelegraph, new Vector3(0f, heading, 0f), side);
         if (ship == null) return null;
 
         Place(ship, at);
+        if (side == Globals._enemyTaskforce) Boosts.ApplyEnsignsToEnemy(ship);
         ship._velocityInKnots = ship._telegraph * ship.MaxForwardSpeedInKnots / 5f;
         ship._velocityInUnity = ship._velocityInKnots * KnotsToUnity;
         return ship;
@@ -52,6 +53,7 @@ static class Spawner
         aircraft.SetFlightPhysicsModel(isStartingAirborne: true);
         Place(aircraft, at);
         aircraft.giveControl(aircraft.SpeedCommand.Value.GetDemandedSpeedInKnots(aircraft));
+        if (side == Globals._enemyTaskforce) Boosts.ApplyEnsignsToEnemy(aircraft);
         return aircraft;
     }
 
@@ -61,9 +63,50 @@ static class Spawner
     /// </summary>
     internal static void Hunt(ObjectBase unit, ObjectBase player)
     {
+        Alert(unit, player);
+        Steer(unit, player);
+    }
+
+    /// <summary>
+    /// Reveal the player and free the unit's weapons, without sending it
+    /// anywhere. A revealed track lasts about ten seconds (TrackComponent's
+    /// MaxAge) unless the unit's own sensors hold it, so a unit kept beyond
+    /// the horizon has to be told again to keep firing.
+    /// </summary>
+    internal static void Alert(ObjectBase unit, ObjectBase player)
+    {
+        // Blinded by an EMP mortar: nothing can tell it where to shoot until it recovers.
+        if (EnsignCombat.IsDark(unit)) return;
         Utils.RevealContactToObject(unit, player, "Comms", 3);
         unit._weaponStatus = ObjectBase.WeaponStatus.Free;
-        Steer(unit, player);
+    }
+
+    /// <summary>Hold a ship at this speed, the way the game's own formation keeping does.</summary>
+    internal static void SetSpeed(ObjectBase unit, float knots)
+    {
+        unit.SetSpeedCommand(new ConstantSpeed(knots, unit));
+        unit._velocityInKnots = knots;
+        unit._velocityInUnity = knots * KnotsToUnity;
+    }
+
+    /// <summary>
+    /// Mark every unknown contact that is in fact hostile as hostile on the
+    /// player's plot, as the contact menu's Hostile button does
+    /// (MapUnitViewModel). A contact exists only once detected, so this runs
+    /// on every tick rather than at spawn; identified contacts are left alone.
+    /// </summary>
+    internal static void MarkHostiles()
+    {
+        var player = Globals._playerTaskforce;
+        if (player == null) return;
+        foreach (var unit in Singleton<ObjectsManager>.Instance._listOfAllObjects)
+        {
+            if (unit == null || unit.IsDestroyed || !unit.isUnit() || unit._taskforce == null) continue;
+            if (player.RelationshipTo(unit._taskforce) != RelationsState.Hostile) continue;
+            var contact = unit.GetMapVehicle(player);
+            if (contact != null && contact.CurrentRelationship() == RelationsState.Unknown)
+                contact.OverrideRelationship(RelationsState.Hostile);
+        }
     }
 
     /// <summary>Re-aim at the player's current position; it keeps moving.</summary>
@@ -72,20 +115,6 @@ static class Spawner
         var target = player._geoPosition;
         if (unit.IsAirUnit) target._height = unit._geoPosition._height;
         unit.setWaypointTask(target);
-    }
-
-    /// <summary>A point at this distance and bearing, preferring open water.</summary>
-    internal static GeoPosition PointOnRing(GeoPosition centre, float minNm, float maxNm, out float bearing)
-    {
-        GeoPosition at = default;
-        bearing = 0f;
-        for (int attempt = 0; attempt < 12; attempt++)
-        {
-            bearing = UnityEngine.Random.Range(0f, 360f);
-            at = Offset(centre, UnityEngine.Random.Range(minNm, maxNm), bearing);
-            if (TerrainUtils.GetHeightAt(at) < -20f) break;
-        }
-        return at;
     }
 
     /// <summary>

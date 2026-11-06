@@ -1,0 +1,32 @@
+<!-- The main menu's way into Survivors: a plate flush with the right edge of the screen, halfway down, in the
+     sidebar's grey with the menu's own uppercase type. Laid out at 1080p and scaled by MenuButton.cs. Bound to
+     MenuButton.Model. -->
+<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      HorizontalAlignment="Right" VerticalAlignment="Center">
+    <Button Command="{Binding OpenCommand}" Focusable="False">
+        <Button.Template>
+            <ControlTemplate TargetType="Button">
+                <Grid>
+                    <Border x:Name="Plate" Background="#B8202428" Padding="30,18,40,20" MinWidth="300">
+                        <StackPanel>
+                            <TextBlock Text="SEA POWER" FontSize="13" Foreground="#FFB0B6BD" Margin="0,0,0,2"/>
+                            <TextBlock x:Name="Title" Text="SURVIVORS" FontSize="34" Foreground="#FFFFFFFF"/>
+                            <TextBlock Text="Hold out for 75 minutes" FontSize="15" Foreground="#FFB0B6BD" Margin="0,4,0,0"/>
+                            <TextBlock Text="{Binding Bank}" FontSize="15" Foreground="#FFF0A030" Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </Border>
+                    <!-- The accent bar down the plate's left edge, after the logo's red rule -->
+                    <Border x:Name="Accent" Width="5" HorizontalAlignment="Left" Background="#FFA4161A"/>
+                </Grid>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="Plate" Property="Background" Value="#E0303539"/>
+                        <Setter TargetName="Accent" Property="Background" Value="#FFF0A030"/>
+                        <Setter TargetName="Title" Property="Foreground" Value="#FFF0A030"/>
+                    </Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate>
+        </Button.Template>
+    </Button>
+</Grid>
