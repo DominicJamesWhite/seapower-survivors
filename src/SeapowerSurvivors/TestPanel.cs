@@ -332,7 +332,7 @@ public class TestPanel : MonoBehaviour
         {
             var item = Store.EscortItem(escorts[i]);
             if (!profile.Owns(item.Id)) BuyButton(profile, item);
-            else profile.SetAshore(item.Id, !GUILayout.Toggle(!profile.IsAshore(item.Id), item.Name, "Button"));
+            else Setup.SetSails(profile, escorts[i], GUILayout.Toggle(Setup.Sailing(profile).Contains(escorts[i]), item.Name, "Button"));
         });
 
         var fleet = Setup.Sailing(profile);

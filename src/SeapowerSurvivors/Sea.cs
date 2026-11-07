@@ -15,7 +15,7 @@ namespace SeapowerSurvivors;
 static class Sea
 {
     /// <summary>Shallower than this is land as far as spawning goes: a ship spawned there runs aground.</summary>
-    const float MinDepthM = 15f;
+    internal const float MinDepthM = 15f;
     const float StepNm = 1f;
     const float BearingStepDeg = 5f;
     /// <summary>How wide the enemy's approach is: the spread of bearings either side of its waters or airfield.</summary>

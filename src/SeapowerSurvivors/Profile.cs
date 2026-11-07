@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using UnityEngine;
@@ -39,6 +40,10 @@ sealed class Profile
     /// <summary>The area and flagship last chosen, by id and type, so the Survivors screen opens as it was left. Empty for the defaults.</summary>
     internal string AreaId { get; private set; } = "";
     internal string FlagshipType { get; private set; } = "";
+    /// <summary>Where the player has placed starting ships, by store id: nautical miles to starboard of the flagship and ahead of it.</summary>
+    readonly Dictionary<string, (float right, float ahead)> stations = new Dictionary<string, (float, float)>();
+    /// <summary>Stations swing with the flagship rather than hold their compass bearing from it.</summary>
+    internal bool StationsTurn { get; private set; }
     /// <summary>Starting ships and flights owned but left ashore, by store id. Everything else owned sails.</summary>
     readonly HashSet<string> ashore = new HashSet<string>();
     /// <summary>The ensigns the next run flies, by id, in the order they were hoisted.</summary>
@@ -67,11 +72,48 @@ sealed class Profile
 
     internal bool IsAshore(string id) => ashore.Contains(id);
 
+    /// <summary>The escort picked to sail under the Greek ensign, apart from who sails otherwise. Empty if none has been picked; <see cref="NoEscort"/> to wait for a chest.</summary>
+    internal string LoneEscort { get; private set; } = "";
+    internal const string NoEscort = "none";
+
+    internal void SetLoneEscort(string id)
+    {
+        if (LoneEscort == id) return;
+        LoneEscort = id;
+        Save();
+    }
+
     internal void Choose(Area area, StartingShip flagship)
     {
         if (AreaId == area.Id && FlagshipType == flagship.Type) return;
         AreaId = area.Id;
         FlagshipType = flagship.Type;
+        Save();
+    }
+
+    internal bool TryGetStation(string key, out float right, out float ahead)
+    {
+        bool placed = stations.TryGetValue(key, out var station);
+        right = station.right;
+        ahead = station.ahead;
+        return placed;
+    }
+
+    internal void SetStation(string key, float right, float ahead)
+    {
+        stations[key] = (right, ahead);
+        Save();
+    }
+
+    internal void ClearStations()
+    {
+        stations.Clear();
+        Save();
+    }
+
+    internal void SetStationsTurn(bool turn)
+    {
+        StationsTurn = turn;
         Save();
     }
 
@@ -169,6 +211,8 @@ sealed class Profile
         ranks.Clear();
         ashore.Clear();
         hoisted.Clear();
+        stations.Clear();
+        StationsTurn = false;
         AreaId = FlagshipType = "";
         Save();
     }
@@ -199,6 +243,18 @@ sealed class Profile
                         break;
                     case "Area": profile.AreaId = value; break;
                     case "Flagship": profile.FlagshipType = value; break;
+                    case "StationsTurn": profile.StationsTurn = value == "True"; break;
+                    case "Stations":
+                        foreach (var entry in value.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+                        {
+                            var parts = entry.Split('|');
+                            if (parts.Length == 3 &&
+                                float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float right) &&
+                                float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float ahead))
+                                profile.stations[parts[0].Trim()] = (right, ahead);
+                        }
+                        break;
+                    case "LoneEscort": profile.LoneEscort = value.Trim(); break;
                     case "Ashore":
                         foreach (var id in value.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
                             profile.ashore.Add(id.Trim());
@@ -243,7 +299,10 @@ sealed class Profile
                 $"SpentOnRanks={spentOnRanks}",
                 $"Area={AreaId}",
                 $"Flagship={FlagshipType}",
+                $"StationsTurn={StationsTurn}",
+                $"Stations={string.Join(",", stations.OrderBy(s => s.Key).Select(s => string.Format(CultureInfo.InvariantCulture, "{0}|{1:0.0}|{2:0.0}", s.Key, s.Value.right, s.Value.ahead)))}",
                 $"Ashore={string.Join(",", ashore.OrderBy(id => id))}",
+                $"LoneEscort={LoneEscort}",
                 $"Hoisted={string.Join(",", hoisted)}",
             });
             if (File.Exists(FilePath)) File.Delete(FilePath);

@@ -19,6 +19,10 @@ sealed class Loadout
     public readonly List<Escort> Ships = new List<Escort>();
     /// <summary>Spawned airborne as the run starts, the way chest flights join.</summary>
     public readonly List<Escort> Flights = new List<Escort>();
+    /// <summary>Where each of <see cref="Ships"/> starts, in the same order.</summary>
+    public readonly List<FleetStation> Stations = new List<FleetStation>();
+    /// <summary>Stations swing with the flagship rather than hold their compass bearing from it.</summary>
+    public bool TurnWithFlagship;
 
     public Loadout(StartingShip flagship, Area area)
     {
@@ -76,8 +80,6 @@ static class Launcher
     /// <summary>The weapon fit our ships of this type use, whichever way they join; null for the game's default.</summary>
     internal static string FitOf(string type) => Flagships.FirstOrDefault(s => s.Type == type)?.Fit;
 
-    /// <summary>Starting ships line up abeam of the flagship, this far apart.</summary>
-    const float ShipSpacingNm = 1.5f;
     /// <summary>The run starts at this local hour wherever it is fought.</summary>
     const int LocalHour = 10;
     /// <summary>Ships other than the flagship are placed in the ini by variant; every ship offered has one.</summary>
@@ -162,14 +164,16 @@ static class Launcher
         ini.AppendLine("EnemyTaskforce=Taskforce2");
         ini.AppendLine($"NumberOfTaskforce1Vessels={1 + loadout.Ships.Count}");
         ini.AppendLine("NumberOfTriggers=1");
-
-        Vessel(ini, 1, loadout.Flagship.Type, loadout.Flagship.Variant, start, heading, 0);
-        for (int i = 0; i < loadout.Ships.Count; i++)
+        // A flagship sailing alone forms up when the first ship joins it (Formations.Of).
+        if (loadout.Ships.Count > 0)
         {
-            // Alternately to starboard and port, stepping outwards.
-            int step = i / 2 + 1;
-            Vessel(ini, i + 2, loadout.Ships[i].Type, EscortVariant, start, heading, i % 2 == 0 ? step : -step);
+            ini.AppendLine("Taskforce1_NumberOfFormations=1");
+            ini.AppendLine(Formations.MissionLine(1 + loadout.Ships.Count, loadout.TurnWithFlagship, Invariant($"{Formations.SpacingNm:0.0}")));
         }
+
+        Vessel(ini, 1, loadout.Flagship.Type, loadout.Flagship.Variant, start, heading, 0f, 0f);
+        for (int i = 0; i < loadout.Ships.Count; i++)
+            Vessel(ini, i + 2, loadout.Ships[i].Type, EscortVariant, start, heading, loadout.Stations[i].Right, loadout.Stations[i].Ahead);
 
         // The director ends the run when the flagship sinks; this only
         // catches the whole fleet going down at once.
@@ -186,10 +190,10 @@ static class Launcher
         return ini.ToString();
     }
 
-    /// <summary>One ship on <paramref name="heading"/>, <paramref name="abeam"/> spacings to starboard of the flagship (port if negative).</summary>
-    static void Vessel(StringBuilder ini, int index, string type, string variant, GeoPosition flagship, float heading, int abeam)
+    /// <summary>One ship on <paramref name="heading"/>, at this station from the flagship: nautical miles to starboard and ahead.</summary>
+    static void Vessel(StringBuilder ini, int index, string type, string variant, GeoPosition flagship, float heading, float right, float ahead)
     {
-        var at = abeam == 0 ? flagship : Spawner.Offset(flagship, Math.Abs(abeam) * ShipSpacingNm, (heading + (abeam > 0 ? 90f : 270f)) % 360f);
+        var at = Formations.StationAt(flagship, heading, right, ahead);
         ini.AppendLine();
         ini.AppendLine($"[Taskforce1Vessel{index}]");
         ini.AppendLine($"Type={type}");

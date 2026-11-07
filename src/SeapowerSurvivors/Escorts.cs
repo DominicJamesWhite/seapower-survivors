@@ -50,10 +50,8 @@ sealed class Escort
 static class Escorts
 {
     const int Offers = 3;
-    /// <summary>Joining ships appear this far from the flagship, abeam of it.</summary>
+    /// <summary>Joining flights appear this far from the flagship, off its beam.</summary>
     const float JoinDistanceNm = 1.5f;
-    /// <summary>How much farther out each further copy of a ship joins, so copies do not sit on top of one another.</summary>
-    const float CopySpacingNm = 0.75f;
     /// <summary>Game time between air resupplies once the Air wing line has it, before its ranks shorten it.</summary>
     internal const float ResupplySeconds = 240f;
 
@@ -183,18 +181,22 @@ static class Escorts
     }
 
     /// <summary>What a card says the ship would add.</summary>
-    internal static string Adds(Run run, Escort escort)
+    /// <summary>What an escort would bring that the fleet has none of.</summary>
+    internal static Role Missing(Run run, Escort escort) => escort.Roles & ~FleetRoles(run);
+
+    /// <summary>Roles as a card lists them.</summary>
+    internal static string RoleList(Role roles)
     {
-        var missing = escort.Roles & ~FleetRoles(run);
-        return missing == Role.None ? "" : $"Adds {Describe(missing).Replace("anti-ship", "anti-ship missiles")}";
+        string list = Describe(roles).Replace("anti-ship", "anti-ship missiles");
+        return char.ToUpperInvariant(list[0]) + list.Substring(1);
     }
 
     internal static string Describe(Role roles) =>
         roles.ToString().Replace("Sams", "SAMs").Replace("AntiShip", "anti-ship").Replace("Ciws", "CIWS")
             .Replace("AirCover", "air cover").Replace("Awacs", "AWACS").Replace("AirStrike", "air strike");
 
-    /// <summary>Spawn the ship or flight beside the flagship, under the player's command, with every upgrade the run has taken.</summary>
-    /// <param name="copy">Which of several joining together this is, so each has its own water.</param>
+    /// <summary>Spawn the ship on an open station in the flagship's formation, or the flight beside it, under the player's command, with every upgrade the run has taken.</summary>
+    /// <param name="copy">Which of several flights joining together this is, so each has its own air. Ships find their own water.</param>
     internal static void Join(Run run, Escort escort, int copy = 0)
     {
         // The Greek ensign: the first escort taken comes as five, and is the last.
@@ -211,13 +213,9 @@ static class Escorts
             return;
         }
         var flagship = run.Ship;
-        // Off either beam, whichever is open water, or astern in a channel too narrow for both.
-        float course = flagship.transform.eulerAngles.y;
-        float side = UnityEngine.Random.value < 0.5f ? 90f : -90f;
-        var spots = new[] { course + side, course - side, course + 180f }
-            .Select(b => Spawner.Offset(flagship._geoPosition, JoinDistanceNm + copy * CopySpacingNm, (b + 360f) % 360f)).ToList();
-        var at = spots.Where(Sea.IsWater).DefaultIfEmpty(spots[2]).First();
-        var ship = Spawner.Ship(escort.Type, at, flagship.transform.eulerAngles.y, Globals._playerTaskforce, Launcher.FitOf(escort.Type) ?? "default");
+        var formation = Formations.Of(run);
+        var slot = Formations.FindStation(formation);
+        var ship = Spawner.Ship(escort.Type, slot.At, flagship.transform.eulerAngles.y, Globals._playerTaskforce, Launcher.FitOf(escort.Type) ?? "default");
         if (ship == null)
         {
             TestPanel.Report($"Could not spawn {escort.Name} ({escort.Type})");
@@ -225,6 +223,7 @@ static class Escorts
         }
         if (flagship is Vessel vessel) ship.setTelegraph(vessel._telegraph);
         ship._weaponStatus = flagship._weaponStatus;
+        Formations.Take(formation, ship, slot);
         run.Fleet.Add(ship);
         Boosts.ApplyFleet(run);
         TestPanel.Report($"{escort.Name} {ship.Name.Value} joins the fleet");

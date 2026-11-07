@@ -895,35 +895,31 @@ static class Boosts
             ? Upgrades.Total(run, Upgrades.Guns, Stat.AntiAir) * Upgrades.Total(run, Upgrades.Guns, Stat.Fuze)
             : 1f;
 
-    const int MaxPreviewRows = 4;
-
     /// <summary>
     /// A card's before → after: what its next <paramref name="ranks"/> ranks
-    /// would change, stat by stat, in the fleet's own weapons and crews.
+    /// would change, stat by stat, in the fleet's own weapons.
     /// Worked out from the values the game first gave them, the same way
     /// Apply sets them.
     /// </summary>
-    internal static List<string> Preview(Run run, Upgrade line, int ranks)
+    internal static CardPreview Preview(Run run, Upgrade line, int ranks)
     {
         var fleet = run.Fleet.Where(s => s != null && !s.IsDestroyed).ToList();
-        var rows = new List<string>();
+        var rows = new List<PreviewRow>();
+        var preview = new CardPreview();
         int rank = run.RankOf(line);
         foreach (var stat in Upgrades.StatsIn(line, rank, rank + ranks))
-            PreviewStat(run, line, stat, ranks, fleet, rows);
-
-        rows = rows.Distinct().ToList();
-        if (rows.Count > MaxPreviewRows)
         {
-            int more = rows.Count - (MaxPreviewRows - 1);
-            rows = rows.Take(MaxPreviewRows - 1).Append($"and {more} more").ToList();
+            int found = rows.Count;
+            PreviewStat(run, line, stat, ranks, fleet, rows);
+            if (rows.Count > found) preview.Covered.Add(stat);
         }
-        // After the cap, so a card full of numbers cannot push it out.
         if (Upgrades.StatsIn(line, rank, rank + ranks).Contains(Stat.Refit) && !Ensigns.Active(Ensigns.IronBombs))
-            rows.Add("Delayed while a plane is guiding a weapon in flight");
-        return rows;
+            rows.Add(PreviewRow.Note("Delayed while a plane is guiding a weapon in flight"));
+        preview.Rows.AddRange(rows.Distinct());
+        return preview;
     }
 
-    static void PreviewStat(Run run, Upgrade line, Stat stat, int ranks, List<ObjectBase> fleet, List<string> rows)
+    static void PreviewStat(Run run, Upgrade line, Stat stat, int ranks, List<ObjectBase> fleet, List<PreviewRow> rows)
     {
         float now = Upgrades.Total(run, line, stat), next = Upgrades.Total(run, line, stat, ranks);
         if (line == Upgrades.Guns)
@@ -935,31 +931,31 @@ static class Boosts
                 {
                     case Stat.Damage when ap != null:
                         float power = Base(ap, "power", ap._warheadPower);
-                        rows.Add($"{name}: {F(power * now)} → {F(power * next)} damage a shell");
+                        rows.Add(new PreviewRow(name, "Damage a shell", F(power * now), F(power * next)));
                         break;
                     case Stat.RateOfFire:
                         bool bursts = Bursts(gun);
                         float reload = bursts ? Base(gun, "burstGap", BurstGap(gun)) : Base(gun, "shellReload", ShellReload(gun));
                         float rate = Ensigns.GunRate;
-                        string row = $"{name}: {F(reload / (now * rate))} s → {F(reload / (next * rate))} s between {(bursts ? "bursts" : "shots")}";
+                        rows.Add(new PreviewRow(name, bursts ? "Between bursts" : "Between shots", $"{F(reload / (now * rate))} s", $"{F(reload / (next * rate))} s"));
                         float rack = Base(gun, "reload", gun._vwp._magazineReloadTime);
-                        if (gun._vwp._associatedMagazine != null && rack > 0f) row += $", {F(rack / (now * rate))} s → {F(rack / (next * rate))} s to reload";
+                        if (gun._vwp._associatedMagazine != null && rack > 0f) rows.Add(new PreviewRow(name, "Reload", $"{F(rack / (now * rate))} s", $"{F(rack / (next * rate))} s"));
                         if (ap != null)
                         {
                             float speed = Base(ap, "muzzleVelocityMs", ap._muzzleVelocityInMeterPerSecond);
-                            row += $", {speed * ShellSpeedFactor(now):0} → {speed * ShellSpeedFactor(next):0} m/s";
+                            rows.Add(new PreviewRow(name, "Shell speed", $"{speed * ShellSpeedFactor(now):0} m/s", $"{speed * ShellSpeedFactor(next):0} m/s"));
                         }
-                        rows.Add(row);
                         break;
                     case Stat.AntiAir when ap != null:
                         float burst = Mathf.Max(Base(ap, "fuzeRadius", ap._fuzeProximityDistance), MinFuzeRadiusM * MetresToUnity) *
                                       next * Upgrades.Total(run, Upgrades.Guns, Stat.Fuze);
-                        rows.Add($"{name}: {(Defence.CanEngageAir(gun) ? "engages aircraft" : "surface targets only")} → engages aircraft, bursts within {burst / MetresToUnity:0} m");
+                        if (!Defence.CanEngageAir(gun)) rows.Add(new PreviewRow(name, "Engages aircraft", "No", "Yes"));
+                        rows.Add(new PreviewRow(name, "Burst radius", "–", $"{burst / MetresToUnity:0} m"));
                         break;
                     case Stat.Fuze when ap != null:
                         float radius = Mathf.Max(Base(ap, "fuzeRadius", ap._fuzeProximityDistance), MinFuzeRadiusM * MetresToUnity) *
                                        Upgrades.Total(run, Upgrades.Guns, Stat.AntiAir);
-                        rows.Add($"{name}: bursts within {radius * now / MetresToUnity:0} m → {radius * next / MetresToUnity:0} m");
+                        rows.Add(new PreviewRow(name, "Burst radius", $"{radius * now / MetresToUnity:0} m", $"{radius * next / MetresToUnity:0} m"));
                         break;
                 }
             }
@@ -971,21 +967,21 @@ static class Boosts
                         foreach (var launcher in SamLaunchers(ship))
                         {
                             float reload = Base(launcher, "reload", launcher._vwp._magazineReloadTime);
-                            if (reload > 0f) rows.Add($"{launcher._vwp._systemName}: {F(reload * now)} s → {F(reload * next)} s to reload");
+                            if (reload > 0f) rows.Add(new PreviewRow(launcher._vwp._systemName, "Reload", $"{F(reload * now)} s", $"{F(reload * next)} s"));
                         }
                         break;
                     case Stat.KillChance:
                         foreach (var ap in SamLaunchers(ship).SelectMany(LauncherAmmo).Concat(PylonAmmo(ship)).Where(AirToAir))
                         {
                             float pk = Base(ap, "kill", ap._killProbability);
-                            rows.Add($"{AmmoName(ap)}: {Percent(pk + now)} → {Percent(pk + next)} hit chance");
+                            rows.Add(new PreviewRow(AmmoName(ap), "Hit chance", Percent(pk + now), Percent(pk + next)));
                         }
                         break;
                     case Stat.Channels:
                         foreach (var director in SamDirectors(ship))
                         {
                             int targets = (int)Base(director, "targets", director._targetChannels);
-                            rows.Add($"{director._systemName}: {targets + (int)now} → {targets + (int)next} targets at once");
+                            rows.Add(new PreviewRow(director._systemName, "Targets at once", (targets + (int)now).ToString(), (targets + (int)next).ToString()));
                         }
                         break;
                 }
@@ -997,22 +993,22 @@ static class Boosts
                 {
                     case Stat.Damage:
                         float power = Base(ap, "power", ap._warheadPower);
-                        rows.Add($"{name}: {F(power * now)} → {F(power * next)} damage");
+                        rows.Add(new PreviewRow(name, "Damage", F(power * now), F(power * next)));
                         break;
                     case Stat.Speed:
                         float speed = Base(ap, "speed", ap._maxVelocityInKnots);
-                        rows.Add($"{name}: {speed * now:0} → {speed * next:0} knots");
+                        rows.Add(new PreviewRow(name, "Speed", $"{speed * now:0} kt", $"{speed * next:0} kt"));
                         break;
                     case Stat.Range:
                         float range = Base(ap, "rangeMiles", ap._maxLaunchRangeInMiles);
                         float minimum = Base(ap, "minRangeMiles", ap._minLaunchRangeInMiles);
-                        string closer = minimum >= MinimumWorthShowingNm ? $", min {F(minimum / now)} → {F(minimum / next)} nm" : "";
-                        rows.Add($"{name}: {range * now:0} → {range * next:0} nm{closer}");
+                        rows.Add(new PreviewRow(name, "Range", $"{range * now:0} nm", $"{range * next:0} nm"));
+                        if (minimum >= MinimumWorthShowingNm) rows.Add(new PreviewRow(name, "Minimum range", $"{F(minimum / now)} nm", $"{F(minimum / next)} nm"));
                         break;
                     case Stat.Evasion:
                         // What is left of an enemy SAM's chance, before the game's 5% floor.
                         float bonus = Base(ap, "samDefence", ap._samDefenceBonus);
-                        rows.Add($"{name}: enemy SAMs hit at {Percent(1f - Mathf.Min(1f, bonus + now))} → {Percent(1f - Mathf.Min(1f, bonus + next))} of their chance");
+                        rows.Add(new PreviewRow(name, "Enemy SAM chance kept", Percent(1f - Mathf.Min(1f, bonus + now)), Percent(1f - Mathf.Min(1f, bonus + next))));
                         break;
                 }
             }
@@ -1022,27 +1018,27 @@ static class Boosts
                 string name = AmmoName(ap);
                 if (run.RankOf(line) == 0 &&
                     AntiSubmarineOnly(ap._targetType, Base(ap, "hasSecondary", ap._hasSecondaryTargetType ? 1f : 0f) > 0f))
-                    rows.Add($"{name}: submarines only → ships too");
+                    rows.Add(new PreviewRow(name, "Targets", "Submarines", "Ships too"));
                 // A carrier has only its flight on this line: no warhead or seeker of its own.
                 if (TorpedoCarrier(ap) && (AntiShipMissile(ap) || stat != Stat.Speed && stat != Stat.Range)) continue;
                 switch (stat)
                 {
                     case Stat.Damage:
                         float power = Base(ap, "power", ap._warheadPower);
-                        rows.Add($"{name}: {F(power * now)} → {F(power * next)} damage");
+                        rows.Add(new PreviewRow(name, "Damage", F(power * now), F(power * next)));
                         break;
                     case Stat.Speed:
                         float speed = Base(ap, "speed", ap._maxVelocityInKnots);
-                        rows.Add($"{name}: {speed * now:0} → {speed * next:0} knots");
+                        rows.Add(new PreviewRow(name, "Speed", $"{speed * now:0} kt", $"{speed * next:0} kt"));
                         break;
                     case Stat.Range:
                         float range = Base(ap, "rangeMiles", ap._maxLaunchRangeInMiles);
-                        rows.Add($"{name}: {F(range * now)} → {F(range * next)} nm");
+                        rows.Add(new PreviewRow(name, "Range", $"{F(range * now)} nm", $"{F(range * next)} nm"));
                         break;
                     case Stat.Seeker:
                         // Seeker ranges are kept in game units, 27.56 to the mile.
                         float hears = Mathf.Max(Base(ap, "seekerActive", ap._seekerActiveRange), Base(ap, "seekerPassive", ap._seekerPassiveRange)) / UnityPerMile;
-                        rows.Add($"{name}: seeker hears {F(hears * now)} → {F(hears * next)} nm");
+                        rows.Add(new PreviewRow(name, "Seeker range", $"{F(hears * now)} nm", $"{F(hears * next)} nm"));
                         break;
                 }
             }
@@ -1050,13 +1046,13 @@ static class Boosts
             switch (stat)
             {
                 case Stat.Range:
-                    rows.Add($"Jammer reach: {EcmFit.ReachNm(run):0} → {EcmFit.ReachNm(run, ranks):0} nm");
+                    rows.Add(new PreviewRow("Jammers", "Reach", $"{EcmFit.ReachNm(run):0} nm", $"{EcmFit.ReachNm(run, ranks):0} nm"));
                     break;
                 case Stat.Arc:
-                    rows.Add($"Jammer arc: {EcmFit.Arc(run):0}° → {EcmFit.Arc(run, ranks):0}°");
+                    rows.Add(new PreviewRow("Jammers", "Arc", $"{EcmFit.Arc(run):0}°", $"{EcmFit.Arc(run, ranks):0}°"));
                     break;
                 case Stat.JamChance:
-                    rows.Add($"Jam chance: {F(EcmFit.Chance(run))} → {F(EcmFit.Chance(run, ranks))}, less each missile's resistance");
+                    rows.Add(new PreviewRow("Jammers", "Jam chance, less each missile's resistance", F(EcmFit.Chance(run)), F(EcmFit.Chance(run, ranks))));
                     break;
             }
         else if (line == Upgrades.Mortars)
@@ -1070,19 +1066,19 @@ static class Boosts
                     case Stat.Reach:
                         float range = Base(ap, "rangeMiles", ap._maxLaunchRangeInMiles);
                         float bombardment = (Upgrades.Has(run, Upgrades.Bombardment) ? BombardmentFactor : 1f) * Ensigns.MortarReach;
-                        rows.Add($"{name}: {F((range + now) * bombardment)} → {F((range + next) * bombardment)} nm");
+                        rows.Add(new PreviewRow(name, "Reach", $"{F((range + now) * bombardment)} nm", $"{F((range + next) * bombardment)} nm"));
                         break;
                     case Stat.Speed:
                         float speed = Base(ap, "speed", ap._maxVelocityInKnots);
-                        rows.Add($"{name}: {speed * now:0} → {speed * next:0} knots");
+                        rows.Add(new PreviewRow(name, "Round speed", $"{speed * now:0} kt", $"{speed * next:0} kt"));
                         break;
                     case Stat.Reload:
                         float reload = Base(launcher, "reload", launcher._vwp._magazineReloadTime);
-                        rows.Add($"{name}: {F(reload * now)} s → {F(reload * next)} s to reload");
+                        rows.Add(new PreviewRow(name, "Reload", $"{F(reload * now)} s", $"{F(reload * next)} s"));
                         break;
                     case Stat.Damage when !Ensigns.Active(Ensigns.EmpMortars):
                         float power = Base(ap, "power", ap._warheadPower);
-                        rows.Add($"{name}: {F(power * now)} → {F(power * next)} damage a round");
+                        rows.Add(new PreviewRow(name, "Damage a round", F(power * now), F(power * next)));
                         break;
                 }
             }
@@ -1093,12 +1089,12 @@ static class Boosts
                 if (stat == Stat.Intercept)
                 {
                     float intercept = Base(ciws, "intercept", ciws._missileInterceptChance);
-                    rows.Add($"{name}: {Mathf.Min(MaxCiwsIntercept, intercept + now):0}% → {Mathf.Min(MaxCiwsIntercept, intercept + next):0}% missile intercept chance");
+                    rows.Add(new PreviewRow(name, "Missile intercept", $"{Mathf.Min(MaxCiwsIntercept, intercept + now):0}%", $"{Mathf.Min(MaxCiwsIntercept, intercept + next):0}%"));
                 }
                 else
                 {
                     float rof = Base(ciws, "rof", ciws._fireRatePerMinute);
-                    rows.Add($"{name}: {rof * now:0} → {rof * next:0} rounds a minute");
+                    rows.Add(new PreviewRow(name, "Rounds a minute", $"{rof * now:0}", $"{rof * next:0}"));
                 }
             }
         else if (line == Upgrades.Countermeasures)
@@ -1111,15 +1107,15 @@ static class Boosts
                         foreach (var ap in MagazineAmmo(chaff).Append(chaff._ammoInUse?._ap).Where(a => a != null).Distinct())
                         {
                             float spoof = Base(ap, "spoof", ap._decoySpoofChance);
-                            rows.Add($"{name}: {Percent(spoof + now)} → {Percent(spoof + next)} spoof chance");
+                            rows.Add(new PreviewRow(AmmoName(ap), "Spoof chance", Percent(spoof + now), Percent(spoof + next)));
                         }
                         break;
                     case Stat.Reload:
                         float reload = Base(chaff, "reload", (float)ChaffReload(chaff));
-                        rows.Add($"{name}: {F(reload * now)} s → {F(reload * next)} s to reload");
+                        rows.Add(new PreviewRow(name, "Reload", $"{F(reload * now)} s", $"{F(reload * next)} s"));
                         break;
                     case Stat.DecoyRule:
-                        rows.Add($"Decoys forced to fail after {StockSpoofLimit} in a row → never");
+                        rows.Add(new PreviewRow("Decoys", "Forced to fail", $"After {StockSpoofLimit} in a row", "Never"));
                         break;
                 }
             }
@@ -1130,35 +1126,30 @@ static class Boosts
                     foreach (var ap in fleet.SelectMany(PylonAmmo).Where(StrikeStore))
                     {
                         float power = Base(ap, "power", ap._warheadPower);
-                        rows.Add($"{AmmoName(ap)}: {F(power * now)} → {F(power * next)} damage");
+                        rows.Add(new PreviewRow(AmmoName(ap), "Damage", F(power * now), F(power * next)));
                     }
                     break;
                 case Stat.Resupply:
-                    rows.Add($"Pylons rearmed at level-ups → every {F(Escorts.ResupplySeconds / 60f)} min too");
+                    rows.Add(new PreviewRow("Flights", "Pylons rearm", "At level-ups", $"Every {F(Escorts.ResupplySeconds / 60f)} min too"));
                     break;
                 case Stat.Refit when Ensigns.Active(Ensigns.IronBombs):
                     break;
                 case Stat.Refit:
-                    int standard = Refits.Standard(run, ranks);
+                    int standard = Refits.Standard(run, ranks), before = rows.Count;
                     foreach (var aircraft in run.AirWing.Keys.Where(a => a != null && !a.IsDestroyed))
                     {
                         var to = Refits.Next(aircraft, standard);
-                        if (to != null) rows.Add($"{Refits.Current(aircraft).Name} → {to.Name}");
+                        if (to != null) rows.Add(new PreviewRow("Flights", "Refit", Refits.Current(aircraft).Name, to.Name));
                     }
-                    if (rows.Count == 0) rows.Add("No strike flight to refit yet: those that join later are refitted as they arrive");
+                    if (rows.Count == before) rows.Add(PreviewRow.Note("No strike flight to refit yet: those that join later are refitted as they arrive"));
                     break;
                 case Stat.Reload:
-                    rows.Add($"Air resupply every {F(Escorts.ResupplySeconds * now / 60f)} min → {F(Escorts.ResupplySeconds * next / 60f)} min");
+                    rows.Add(new PreviewRow("Flights", "Air resupply every", $"{F(Escorts.ResupplySeconds * now / 60f)} min", $"{F(Escorts.ResupplySeconds * next / 60f)} min"));
                     break;
             }
-        else if (line == Upgrades.Reaction)
-            foreach (var ship in fleet.Where(s => s._crew != null))
-            {
-                float contact = Base(ship._crew, "contact", ship._crew._newContactProcessTime);
-                rows.Add($"{ship.Name.Value}: new contacts processed in {F(contact * ReactionFactor(run))} s → {F(contact * ReactionFactor(run, ranks))} s");
-            }
+        // Reaction shows none: its card's sentence says more than a contact timer per ship would.
         else if (line == Upgrades.Accuracy)
-            rows.Add($"Gun and mortar aiming error: {AimErrorFactor(run) * 100f:0.#}% → {AimErrorFactor(run, ranks) * 100f:0.#}% of normal");
+            rows.Add(new PreviewRow("Guns and mortars", "Aiming error, of normal", $"{AimErrorFactor(run) * 100f:0.#}%", $"{AimErrorFactor(run, ranks) * 100f:0.#}%"));
     }
 
     static string F(float value) => value.ToString(value < 10f ? "0.##" : "0.#", System.Globalization.CultureInfo.InvariantCulture);

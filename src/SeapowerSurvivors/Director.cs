@@ -255,6 +255,7 @@ public class Director : MonoBehaviour
                 run.FlagTransfers--;
                 TestPanel.Report($"{run.Ship?.Name.Value ?? "Flagship"} lost: the flag passes to {heir.Name.Value} ({run.FlagTransfers} transfer(s) left)");
                 run.Ship = heir;
+                Formations.PassFlag(heir);
             }
         }
         if (run.Ship == null || run.Ship.IsDestroyed)
@@ -821,8 +822,7 @@ public class Director : MonoBehaviour
         if (flagsWidth > 0f) width += gap + flagsWidth;
 
         // The slots: a ring for each weapon slot, then each fleet line taken, wide enough to name them.
-        int slotCount = Rings.Slots(run).Count;
-        width = Mathf.Max(width, slotCount * 128f * scale);
+        width = Mathf.Max(width, Rings.RowWidth(run, scale));
         var panel = new Rect((Screen.width - width) / 2f, HudTop * scale, width, height);
         Hud.Box(panel);
 

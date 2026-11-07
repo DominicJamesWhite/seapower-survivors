@@ -15,7 +15,7 @@ public class LevelUpScreen : MonoBehaviour
 {
     const int Choices = 3;
     /// <summary>At 1080p; scaled with the screen.</summary>
-    const float CardWidth = 320f, CardHeight = 300f, Gap = 16f;
+    const float CardWidth = 320f, MinCardHeight = 300f, Gap = 16f;
     const float BanishHeight = 30f;
 
     /// <summary>True while the screen owns the pause; the time-compression patches below defer to it.</summary>
@@ -23,8 +23,10 @@ public class LevelUpScreen : MonoBehaviour
     static bool resuming;
     static float resumeCompression = 1f;
 
-    /// <summary>The upgrade cards: each upgrade, the rarity its card rolled, the ranks that gives, and its before → after lines.</summary>
-    List<(Upgrade upgrade, Rarity rarity, int ranks, List<string> preview)> offer = new List<(Upgrade, Rarity, int, List<string>)>();
+    /// <summary>The upgrade cards: each upgrade and the rarity its card rolled.</summary>
+    List<(Upgrade upgrade, Rarity rarity)> offer = new List<(Upgrade, Rarity)>();
+    /// <summary>What is drawn for the current cards, in the order of <see cref="offer"/> or <see cref="ships"/>.</summary>
+    List<LevelUpCard> cards = new List<LevelUpCard>();
     List<Escort> ships = new List<Escort>();
     /// <summary>True while the cards are a boss chest's ships rather than upgrades.</summary>
     bool choosingShip;
@@ -100,28 +102,29 @@ public class LevelUpScreen : MonoBehaviour
     void Roll(Run run, bool reroll = false)
     {
         choosingShip = run.ShipChests.Count > 0;
-        if (choosingShip) ships = Escorts.Offer(run, run.ShipChests.Peek(), reroll ? ships : null);
+        if (choosingShip)
+        {
+            ships = Escorts.Offer(run, run.ShipChests.Peek(), reroll ? ships : null);
+            cards = ships.Select(escort => LevelUpCard.For(run, escort)).ToList();
+        }
         else
         {
             // Every eligible upgrade is equally likely, but for a reroll's lean
             // away from the cards it replaces; each card then rolls its rarity,
             // which is how many ranks of the line it gives.
             var shown = reroll ? offer.Select(card => card.upgrade).ToList() : null;
-            offer = Shuffled(Upgrades.Eligible(run), shown).Take(Ensigns.CardCount(Choices)).Select(u =>
+            offer = Shuffled(Upgrades.Eligible(run), shown).Take(Ensigns.CardCount(Choices)).Select(u => (u, Rarities.Roll(run.Luck))).ToList();
+            cards = offer.Select(card =>
             {
-                var rarity = Rarities.Roll(run.Luck);
-                int ranks = Upgrades.RanksFor(run, u, rarity);
-                List<string> preview;
-                try { preview = Boosts.Preview(run, u, ranks); }
+                int ranks = Upgrades.RanksFor(run, card.upgrade, card.rarity);
+                CardPreview preview;
+                try { preview = Boosts.Preview(run, card.upgrade, ranks); }
                 catch (System.Exception e)
                 {
-                    Entry.Log.LogError($"Preview for {u.Name} failed: {e}");
-                    preview = new List<string>();
+                    Entry.Log.LogError($"Preview for {card.upgrade.Name} failed: {e}");
+                    preview = new CardPreview();
                 }
-                // The next ability after this card, after the numbers.
-                var next = Upgrades.NextAbility(u, run.RankOf(u) + ranks);
-                if (next.HasValue) preview.Add($"Then {next.Value.step.Name} in {next.Value.ranks}");
-                return (u, rarity, ranks, preview);
+                return LevelUpCard.For(run, card.upgrade, card.rarity, ranks, preview);
             }).ToList();
         }
     }
@@ -165,8 +168,8 @@ public class LevelUpScreen : MonoBehaviour
     /// <summary>
     /// Drawn in the game's own look, as the status line is: its modal window
     /// and veil, its window colour for cards, caps on buttons and field labels
-    /// only, and each card's rarity as a crew skill mark and a thin strip along
-    /// its top, like a tab's. Sized for 1080p and scaled with the screen.
+    /// only, and each card's rarity as a crew skill mark. Sized for 1080p and
+    /// scaled with the screen, and as tall as the cards dealt need.
     /// </summary>
     void OnGUI()
     {
@@ -176,14 +179,16 @@ public class LevelUpScreen : MonoBehaviour
         float s = Screen.height / 1080f;
         if (!Mathf.Approximately(s, styleScale)) BuildStyles(s);
 
-        float cardWidth = CardWidth * s, cardHeight = CardHeight * s, gap = Gap * s, pad = 24f * s;
-        int count = choosingShip ? ships.Count : offer.Count;
+        float cardWidth = Mathf.Round(CardWidth * s), gap = Mathf.Round(Gap * s), pad = 24f * s;
+        int count = cards.Count;
+        float headHeight = Mathf.Round(cards.Select(c => c.HeadHeight(cardWidth, s)).DefaultIfEmpty(0f).Max());
+        float cardHeight = Mathf.Round(Mathf.Max(MinCardHeight * s, headHeight + cards.Select(c => c.ContentHeight(cardWidth, s)).DefaultIfEmpty(0f).Max()));
         int widest = Ensigns.CardCount(Choices);
         float cardsWidth = widest * cardWidth + (widest - 1) * gap;
         float panelWidth = cardsWidth + 2f * pad;
         float banish = !choosingShip && run.Banishes > 0 ? BanishHeight * s : 0f;
         float panelHeight = pad + 56f * s + cardHeight + banish + 20f * s + ButtonHeight * s + pad;
-        var panel = new Rect((Screen.width - panelWidth) / 2f, (Screen.height - panelHeight) / 2f, panelWidth, panelHeight);
+        var panel = new Rect(Mathf.Round((Screen.width - panelWidth) / 2f), Mathf.Round((Screen.height - panelHeight) / 2f), panelWidth, panelHeight);
 
         // The game's modal: the map behind veiled, so the cards read as the one thing to do.
         Hud.Fill(new Rect(0f, 0f, Screen.width, Screen.height), Hud.Veil);
@@ -196,6 +201,7 @@ public class LevelUpScreen : MonoBehaviour
         {
             GUI.Label(new Rect(x0, y, cardsWidth, 16f * s), "BOSS CHEST", caps);
             GUI.Label(new Rect(x0, y + 16f * s, cardsWidth, 32f * s), "Reinforcements join your fleet", heading);
+            GUI.Label(new Rect(x0, y + 16f * s, cardsWidth, 32f * s), "Under your command. Ships take every upgrade; flights have unlimited fuel.", capsRight);
         }
         else
         {
@@ -210,30 +216,20 @@ public class LevelUpScreen : MonoBehaviour
 
         for (int i = 0; i < count; i++)
         {
-            var rect = new Rect(cardsX + i * (cardWidth + gap), y, cardWidth, cardHeight);
+            var rect = new Rect(Mathf.Round(cardsX + i * (cardWidth + gap)), Mathf.Round(y), cardWidth, cardHeight);
+            bool picked = cards[i].Draw(rect, headHeight, s);
             if (choosingShip)
             {
-                var escort = ships[i];
-                string kind = escort.IsAir ? (escort.Count > 1 ? $"{escort.Count} AIRCRAFT" : "AIRCRAFT") : "SHIP";
-                string adds = Escorts.Adds(run, escort);
-                string footer = escort.IsAir ? "Unlimited fuel; under your command" : "Under your command; takes every upgrade";
-                if (Card(rect, Hud.Red, $"{kind} · TIER {escort.Tier}", null, escort.Name,
-                        Escorts.Describe(escort.Roles), adds, new List<string> { footer }))
+                if (picked)
                 {
-                    Pick(run, escort);
+                    Pick(run, ships[i]);
                     return;
                 }
             }
             else
             {
-                var (upgrade, rarity, ranks, preview) = offer[i];
-                int held = run.RankOf(upgrade), first = held + 1, last = held + ranks;
-                string kind = upgrade.Kind == Kind.Fleet ? "FLEET UPGRADE" : "WEAPON UPGRADE";
-                string rank = held == 0 ? "NEW" : ranks > 1 ? $"RANKS {first}–{last}/{upgrade.MaxRank}" : $"RANK {first}/{upgrade.MaxRank}";
-                var (stats, abilities) = Upgrades.CardText(run, upgrade, ranks);
-                if (Card(rect, Rarities.Colour(rarity), $"{rarity.ToString().ToUpperInvariant()} · {kind}", rank, upgrade.Name,
-                        string.Join("\n", stats), abilities.Count > 0 ? string.Join("\n", abilities) : null, preview,
-                        ring => Rings.Draw(ring, upgrade, held, ranks, icon: false), rarity))
+                var (upgrade, rarity) = offer[i];
+                if (picked)
                 {
                     Pick(run, upgrade, rarity);
                     return;
@@ -259,7 +255,7 @@ public class LevelUpScreen : MonoBehaviour
     const float ButtonHeight = 36f;
 
     float styleScale;
-    GUIStyle caps, capsRight, heading, cardTitle, body, accentBody, detail, button;
+    GUIStyle caps, capsRight, heading, button;
 
     void BuildStyles(float s)
     {
@@ -268,77 +264,7 @@ public class LevelUpScreen : MonoBehaviour
         caps = Hud.Text(Size(12), Hud.Label);
         capsRight = Hud.Text(Size(12), Hud.Label, TextAnchor.MiddleRight);
         heading = Hud.Text(Size(24), Hud.Value);
-        cardTitle = Hud.Text(Size(16), Hud.Value, TextAnchor.UpperLeft, FontStyle.Bold);
-        cardTitle.wordWrap = true;
-        body = Hud.Text(Size(12), Hud.Value, TextAnchor.UpperLeft);
-        body.wordWrap = true;
-        accentBody = Hud.Text(Size(12), Hud.Value, TextAnchor.UpperLeft, FontStyle.Bold);
-        accentBody.wordWrap = true;
-        detail = Hud.Text(Size(11), Hud.Label, TextAnchor.UpperLeft);
-        detail.wordWrap = true;
         button = Hud.Text(Size(12), Hud.Label, TextAnchor.MiddleCenter);
-    }
-
-    /// <summary>
-    /// One card: a panel with a coloured strip, a caps line after any rarity's
-    /// badge, a name, what it does, its abilities in bold, and detail below a
-    /// rule; a ring, when given, sits beside the name. True when clicked.
-    /// </summary>
-    bool Card(Rect rect, Color strip, string kind, string corner, string title, string text, string highlight, List<string> lines,
-        System.Action<Rect> ring = null, Rarity? rarity = null)
-    {
-        float s = styleScale;
-        bool hover = rect.Contains(Event.current.mousePosition);
-        // The game's list colours, with the red edge of its Task Force buttons.
-        Hud.Box(rect, hover ? Hud.Control : Hud.Panel);
-        if (hover) Hud.Frame(rect, Hud.Red);
-        Hud.Fill(new Rect(rect.x + 1f, rect.y + 1f, rect.width - 2f, 2f * s), strip);
-
-        float pad = 16f * s, width = rect.width - 2f * pad, x = rect.x + pad, y = rect.y + 18f * s;
-        float kindX = x;
-        if (rarity.HasValue)
-        {
-            float badgeHeight = 14f * s, badgeWidth = Hud.BadgeWidthFor(badgeHeight);
-            Hud.RarityBadge(new Rect(x, y + 1f * s, badgeWidth, badgeHeight), rarity.Value, strip);
-            kindX += badgeWidth + 4f * s;
-        }
-        caps.normal.textColor = strip;
-        GUI.Label(new Rect(kindX, y, width - (kindX - x), 16f * s), kind, caps);
-        caps.normal.textColor = Hud.Label;
-        if (corner != null)
-        {
-            capsRight.normal.textColor = corner == "NEW" ? Hud.Accent : Hud.Label;
-            GUI.Label(new Rect(x, y, width, 16f * s), corner, capsRight);
-            capsRight.normal.textColor = Hud.Label;
-        }
-        y += 22f * s;
-
-        float ringSize = 40f * s, titleWidth = width;
-        if (ring != null)
-        {
-            // Inset by the room its ability dots take outside it.
-            ring(new Rect(x + width - ringSize - 6f * s, y + 6f * s, ringSize, ringSize));
-            titleWidth = width - ringSize - 18f * s;
-        }
-        float titleEnd = Block(title, cardTitle, x, y, titleWidth) + 8f * s;
-        y = ring != null ? Mathf.Max(titleEnd, y + ringSize + 16f * s) : titleEnd;
-        y = Block(text, body, x, y, width) + 10f * s;
-        if (!string.IsNullOrEmpty(highlight)) y = Block(highlight, accentBody, x, y, width) + 10f * s;
-        if (lines != null && lines.Count > 0)
-        {
-            Hud.Fill(new Rect(x, y, width, 1f), Hud.Edge);
-            y += 10f * s;
-            foreach (var line in lines)
-                if (y < rect.yMax - pad) y = Block(line, detail, x, y, width) + 4f * s;
-        }
-        return GUI.Button(rect, GUIContent.none, GUIStyle.none);
-    }
-
-    static float Block(string text, GUIStyle style, float x, float y, float width)
-    {
-        float height = style.CalcHeight(new GUIContent(text), width);
-        GUI.Label(new Rect(x, y, width, height), text, style);
-        return y + height;
     }
 
     /// <summary>The game's button: flat grey, red with light text on hover, darker with faint text when it cannot be used.</summary>

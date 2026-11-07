@@ -100,6 +100,30 @@ sealed class Upgrade
     public bool Fits(IEnumerable<ObjectBase> fleet) => Kind == Kind.Fleet || fleet.Any(s => s != null && !s.IsDestroyed && Systems(s).Any());
 }
 
+/// <summary>One row of a card's table: a stat of a weapon, now and after the card. A note has only a label.</summary>
+readonly struct PreviewRow
+{
+    public readonly string Group, Label, Before, After;
+
+    public PreviewRow(string group, string label, string before, string after)
+    {
+        Group = group;
+        Label = label;
+        Before = before;
+        After = after;
+    }
+
+    public static PreviewRow Note(string text) => new PreviewRow(null, text, null, null);
+    public bool IsNote => Before == null;
+}
+
+/// <summary>A card's table, and which stats it has real numbers for: the rest keep their plain sentence.</summary>
+sealed class CardPreview
+{
+    public readonly List<PreviewRow> Rows = new List<PreviewRow>();
+    public readonly HashSet<Stat> Covered = new HashSet<Stat>();
+}
+
 /// <summary>A card's rarity: how many ranks of its line it gives at once.</summary>
 enum Rarity { Common, Rare, Epic, Legendary }
 
@@ -166,7 +190,7 @@ static class Upgrades
             {
                 d, f, d, f, new Step(Stat.AntiAir, 3f, "Every gun engages aircraft, with proximity fuzes and AA fire control", "Anti-air fire"),
                 d, f, d, f, new Step(Stat.Fuze, 2f, "Flak bursts reach 2× as far", "Wide bursts"),
-                d, f, d, f, Step.Ability(HeavyShells = new Unlock("Heavy shells", "Shells hit 2× as hard, on top of the path")),
+                d, f, d, f, Step.Ability(HeavyShells = new Unlock("Heavy shells", "Shells hit 2× as hard, on top of earlier ranks")),
             },
         };
     }
@@ -289,7 +313,7 @@ static class Upgrades
             {
                 first, reach, burst, reach2, Step.Ability(Hunter = new Unlock("Hunter", "Torpedo sonars hear 2× as far over a 2× wider arc, ignore decoys, and circle back if they lose the target")),
                 d, k, r, d, Step.Ability(SureShot = new Unlock("Sure shot", "Torpedo seekers and warheads never fail")),
-                k, r, d, k, Step.Ability(KeelBreaker = new Unlock("Keel breaker", "Torpedo damage ×3, on top of the path")),
+                k, r, d, k, Step.Ability(KeelBreaker = new Unlock("Keel breaker", "Torpedo damage ×3, on top of earlier ranks")),
                 r, d, k, r, Step.Ability(Supercavitating = new Unlock("Supercavitating", "Torpedoes run 2× as fast again")),
             },
         };
@@ -312,7 +336,7 @@ static class Upgrades
 
     static Upgrade MakeMortars()
     {
-        var x = new Step(Stat.Reach, 10f, "Mortars reach {0} nm farther, and fire at ships on their own");
+        var x = new Step(Stat.Reach, 10f, "Mortars reach {0} nm farther");
         var s = new Step(Stat.Speed, 1.6818f, "Mortar rounds fly {0}× as fast");
         var r = new Step(Stat.Reload, 0.5f, "Mortars reload {0}× as fast");
         var d = new Step(Stat.Damage, 1.26f, "Mortar rounds hit {0}× as hard");
@@ -347,7 +371,7 @@ static class Upgrades
             {
                 i, f, i, f, Step.Ability(HeavyRounds = new Unlock("Heavy rounds", "CIWS damage ×3: armoured missiles go down in far fewer hits")),
                 i, f, i, f, Step.Ability(FlakRounds = new Unlock("Flak rounds", "Each CIWS kill destroys other enemy missiles within 25 m")),
-                i, f, i, f, Step.Ability(Overdrive = new Unlock("Overdrive", "CIWS rate of fire ×2, on top of the path")),
+                i, f, i, f, Step.Ability(Overdrive = new Unlock("Overdrive", "CIWS rate of fire ×2, on top of earlier ranks")),
                 i, f, i, f, Step.Ability(FlakStorm = new Unlock("Flak storm", "CIWS bursts reach 75 m and destroy aircraft too")),
             },
         };
@@ -536,25 +560,25 @@ static class Upgrades
     }
 
     /// <summary>
-    /// What the next <paramref name="count"/> ranks of a line do: one line per
-    /// stat they raise, with the ranks' gains combined, and one per ability.
+    /// What the next <paramref name="count"/> ranks of a line do: one sentence per
+    /// stat they raise, with the ranks' gains combined, and each ability's name and text.
     /// </summary>
-    public static (List<string> stats, List<string> abilities) CardText(Run run, Upgrade line, int count)
+    public static (List<(Stat stat, string text)> stats, List<(string name, string text)> abilities) CardText(Run run, Upgrade line, int count)
     {
         int from = run.RankOf(line), to = Mathf.Min(line.MaxRank, from + count);
-        var stats = new List<string>();
-        var abilities = new List<string>();
+        var stats = new List<(Stat, string)>();
+        var abilities = new List<(string, string)>();
         var seen = new HashSet<Stat>();
         // Under the St Andrew's flag every rank grows the pulse, and warheads are gone.
         bool emp = line == Mortars && Ensigns.Active(Ensigns.EmpMortars);
-        if (emp) stats.Add($"EMP pulse reaches {Ensigns.EmpNm(to):0.#} nm and lasts {Ensigns.EmpSeconds(to):0} s");
+        if (emp) stats.Add((Stat.Ability, $"EMP pulse reaches {Ensigns.EmpNm(to):0.#} nm and lasts {Ensigns.EmpSeconds(to):0} s"));
         for (int i = from; i < to; i++)
         {
             var step = line.Path[i];
-            if (step.Stat == Stat.Refit && Ensigns.Active(Ensigns.IronBombs)) abilities.Add($"{step.Name}: flights keep their bombs");
-            else if (step.IsAbility) abilities.Add($"{step.Name}: {step.Text}");
+            if (step.Stat == Stat.Refit && Ensigns.Active(Ensigns.IronBombs)) abilities.Add((step.Name, "Flights keep their bombs"));
+            else if (step.IsAbility) abilities.Add((step.Name, step.Text));
             else if (emp && step.Stat == Stat.Damage) continue;
-            else if (seen.Add(step.Stat)) stats.Add(Text(step, Gain(line, step.Stat, from, to)));
+            else if (seen.Add(step.Stat)) stats.Add((step.Stat, Text(step, Gain(line, step.Stat, from, to))));
         }
         return (stats, abilities);
     }

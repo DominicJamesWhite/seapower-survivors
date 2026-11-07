@@ -298,7 +298,10 @@
                         <TextBlock Text="Flagship" Style="{StaticResource Heading}"/>
                         <Border Style="{StaticResource Rule}"/>
                         <ItemsControl ItemsSource="{Binding Flagships}" ItemTemplate="{StaticResource ShipRow}"/>
-                        <TextBlock Text="Starting ships and flights" Style="{StaticResource Heading}" Margin="0,14,0,4"/>
+                        <Grid Margin="0,14,0,4">
+                            <TextBlock Text="Starting ships and flights" Style="{StaticResource Heading}" Margin="0" VerticalAlignment="Bottom"/>
+                            <Button Command="{Binding FormationCommand}" Content="FORMATION" MinWidth="120" Height="30" HorizontalAlignment="Right"/>
+                        </Grid>
                         <Border Style="{StaticResource Rule}" Margin="0,0,0,8"/>
                         <TextBlock Text="Bought ones sail with the flagship. Click one to leave it ashore." FontSize="12" Margin="0,0,0,8"/>
                         <ItemsControl ItemsSource="{Binding Escorts}" ItemTemplate="{StaticResource ShipRow}"/>
@@ -389,7 +392,7 @@
             </Border>
         </Grid>
 
-        <!-- Footer: BACK, what happened last, and LAUNCH, in the game's own buttons -->
+        <!-- Footer: BACK, what happened last, and LAUNCH, in the game's own buttons. The ensign page has only DONE. -->
         <Grid Grid.Row="2" Margin="0,10">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
@@ -399,7 +402,122 @@
             <Button Command="{Binding BackCommand}" Content="{Binding BackText}" Width="160" Height="36" FontSize="14"/>
             <TextBlock Grid.Column="1" Text="{Binding Message}" FontSize="12" Foreground="{DynamicResource Brush.Foreground.Emphasis}"
                        VerticalAlignment="Center" HorizontalAlignment="Right" Margin="24,0" TextWrapping="Wrap"/>
-            <Button Grid.Column="2" Command="{Binding LaunchCommand}" Content="{Binding LaunchText}" Width="160" Height="36" FontSize="14"/>
+            <Button Grid.Column="2" Command="{Binding LaunchCommand}" Content="{Binding LaunchText}" Visibility="{Binding MainPage}" Width="160" Height="36" FontSize="14"/>
         </Grid>
+    </Grid>
+
+    <!-- The Formation Editor: dismissed by its X or a click outside it, as a window over the screen in the game's Task Force mode.
+         Drawn here, in the look of the game's Campaign/Window.xaml, whose template lives inside the game's own compiled views.
+         Up is the flagship's course; drag a ship to its station. -->
+    <Grid Visibility="{Binding FormationWindow}">
+        <Button Command="{Binding CloseFormationCommand}" Focusable="False">
+            <Button.Template>
+                <ControlTemplate TargetType="Button">
+                    <Border Background="#99000000"/>
+                </ControlTemplate>
+            </Button.Template>
+        </Button>
+        <Border HorizontalAlignment="Center" VerticalAlignment="Center" Width="900"
+                Background="{DynamicResource Brush.Window.Background}" BorderBrush="{DynamicResource Brush.Border.Normal}" BorderThickness="1">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="20"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Border Background="{DynamicResource Brush.Window.Header}" IsHitTestVisible="False">
+                        <TextBlock Text="FORMATION EDITOR" Margin="2.5,0,0,0" VerticalAlignment="Center"/>
+                    </Border>
+                    <Button Grid.Column="1" Command="{Binding CloseFormationCommand}" Width="20" Padding="0" Margin="0" Focusable="False">
+                        <TextBlock FontWeight="Bold" Text="X"/>
+                    </Button>
+                </Grid>
+                    <Grid Grid.Row="1" Margin="10" DataContext="{Binding Formation}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="20"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid Width="520" Height="520">
+                            <Path Data="{Binding Land}" Fill="{DynamicResource Brush.Foreground.Normal}" Opacity="0.35" Width="500" Height="500" IsHitTestVisible="False"/>
+                            <Path Stroke="{DynamicResource Brush.TextBox.Foreground}" Opacity="0.25" StrokeThickness="1" Stretch="UniformToFill" Width="500" Height="500"
+                                  Data="M -4.5 0.5 A 1 1 0.5 0 0 5.5 0.5 A 1 1 0.5 0 0 -4.5 0.5 M -3.5 0.5 A 1 1 0 0 0 4.5 0.5 A 1 1 0 0 0 -3.5 0.5 M -2.5 0.5 A 1 1 0 0 0 3.5 0.5 A 1 1 0 0 0 -2.5 0.5 M -1.5 0.5 A 1 1 0 0 0 2.5 0.5 A 1 1 0 0 0 -1.5 0.5 M -0.5 0.5 A 1 1 0 0 0 1.5 0.5 A 1 1 0 0 0 -0.5 0.5 M 0.5 5.5 L 0.5 -4.5 M 5.5 0.5 L -4.5 0.5 M -3.8716 -1.9287 L 4.8708 2.9282 M 2.9277 4.8703 L -1.9287 -3.8716 M -3.8708 2.9282 L 4.8716 -1.9287 M 2.9287 -3.8716 L -1.9282 4.8708"/>
+                            <Path Stroke="{DynamicResource Brush.TextBox.ForegroundStrongEmphasis}" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"
+                                  Data="M 20 0 L 20 -250 L 0 -230 M 40 -230 L 20 -250"/>
+                            <TextBlock Text="{Binding ScaleText}" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="11" Margin="0,0,14,18"/>
+                            <!-- Nothing below the plot takes the mouse: FormationPlot finds the nearest ship itself -->
+                            <Canvas x:Name="StationPlot" Width="500" Height="500" Background="#01000000"/>
+                            <ItemsControl ItemsSource="{Binding Dots}" Width="500" Height="500" IsHitTestVisible="False">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><Canvas Width="500" Height="500"/></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemContainerStyle>
+                                    <Style TargetType="ContentPresenter">
+                                        <Setter Property="Canvas.Left" Value="{Binding Left}"/>
+                                        <Setter Property="Canvas.Top" Value="{Binding Top}"/>
+                                        <Setter Property="Visibility" Value="{Binding Shown}"/>
+                                    </Style>
+                                </ItemsControl.ItemContainerStyle>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Canvas Width="0" Height="0">
+                                            <Ellipse Width="10" Height="10" Canvas.Left="-5" Canvas.Top="-5">
+                                                <Ellipse.Style>
+                                                    <Style TargetType="Ellipse">
+                                                        <Setter Property="Fill" Value="{DynamicResource Brush.Button.BackgroundOver}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsLeader}" Value="True">
+                                                                <Setter Property="Fill" Value="{DynamicResource Brush.Foreground.Emphasis}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Ellipse.Style>
+                                            </Ellipse>
+                                            <TextBlock Text="{Binding Name}" Width="150" Canvas.Left="-75" Canvas.Top="6" TextAlignment="Center" FontSize="11" Foreground="{DynamicResource Brush.Foreground.Highlight}"/>
+                                        </Canvas>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Grid>
+                        <Slider Grid.Row="1" Minimum="2" Maximum="{Binding MaxScale}" Value="{Binding Scale, Mode=TwoWay}" TickFrequency="1" IsSnapToTickEnabled="True" Margin="10,8,10,0"/>
+                        <ScrollViewer Grid.Column="2" Grid.RowSpan="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel>
+                                <TextBlock Text="Up is the flagship's course. Drag a ship to its station. Shaded ground is land or too shallow: a ship placed there starts on the nearest clear water. The slowest ship sets the fleet's speed. Stations can be changed during a run in the game's own Formation Editor."
+                                           FontSize="12" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                                <ItemsControl ItemsSource="{Binding Dots}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{DynamicResource Brush.ListBox.Background}" Padding="12,8" Margin="0,0,0,4">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="{Binding Name}" Style="{StaticResource Name}"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Detail}" FontSize="12" Margin="10,0,0,0"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock Text="{Binding Summary}" FontSize="12" Foreground="{DynamicResource Brush.Foreground.Highlight}" TextWrapping="Wrap" Margin="0,8,0,14"/>
+                                <Button Style="{StaticResource SelectableRow}" Command="{Binding TurnCommand}" Height="34" Margin="0,0,0,4">
+                                    <TextBlock Text="Stations turn with the flagship" Style="{StaticResource Name}" FontSize="12" Margin="12,0"/>
+                                </Button>
+                                <TextBlock Text="{Binding TurnNote}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,14"/>
+                                <Button Command="{Binding DefaultCommand}" Content="DEFAULT" Width="120" Height="30" HorizontalAlignment="Left"/>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+            </Grid>
+        </Border>
     </Grid>
 </Grid>

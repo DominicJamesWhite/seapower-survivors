@@ -271,6 +271,10 @@ Yak-38 3, a Tu-22M2 12.
   banked levels shown one after another. You get 3 rerolls a run, and a skip.
   Shop ranks add rerolls and banishes. A reroll leans away from the cards it
   replaces: each is a third as likely as any other to come up again.
+  Each card runs in the order a player asks: what it is and what it costs (rank
+  and rarity, or the weapon slot it takes), any new ability, the fleet's own
+  weapons now and after, then the next ability on the line. A stat with no real
+  numbers to show keeps a plain sentence.
 
 ## Upgrades
 

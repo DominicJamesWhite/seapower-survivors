@@ -68,6 +68,15 @@ static class Rings
             GUI.DrawTexture(new Rect(ring.center.x - size / 2f, ring.center.y - size / 2f, size, size), texture);
     }
 
+    /// <summary>One of the icons on its own, centred in a square of this size.</summary>
+    internal static void DrawIcon(Rect at, string name)
+    {
+        int size = Mathf.Max(8, Mathf.RoundToInt(at.width));
+        if (!icons.TryGetValue((name, size), out var texture))
+            icons[(name, size)] = texture = BuildIcon(name, size);
+        if (texture != null) GUI.DrawTexture(new Rect(Mathf.Round(at.x), Mathf.Round(at.y), size, size), texture);
+    }
+
     static Texture2D NewTexture(int size) =>
         new Texture2D(size, size, TextureFormat.RGBA32, false)
         {
@@ -174,6 +183,8 @@ static class Rings
         ["acc"] = new[] { Circle(12, 12, 8), Circle(12, 12, 3) },
         // A mast, and waves spreading from its top.
         ["ecm"] = new[] { P(12, 21, 12, 8), Arc(12, 8, 4f), Arc(12, 8, 7.5f), Arc(12, 8, 11f) },
+        // Roboto Regular has no arrow glyph, so a table's arrow is drawn too.
+        ["arrow"] = new[] { P(3, 12, 21, 12), P(14, 5, 21, 12, 14, 19) },
     };
 
     static Vector2[] P(params float[] xy)
@@ -231,7 +242,7 @@ static class Rings
 
     // The HUD's slot row and its hover panel.
 
-    static float styleScale;
+    static float styleScale, slotWidth;
     static GUIStyle slotName, slotSub, tipTitle, tipRank, tipRight, tipLabel, tipText, tipBold, tipNext, tipNum, tipNumNext;
 
     static void Styles(float s)
@@ -251,7 +262,12 @@ static class Rings
         tipNum = Hud.Text(Size(12), Hud.Label, TextAnchor.UpperRight);
         tipNumNext = Hud.Text(Size(12), Hud.Accent, TextAnchor.UpperRight);
         foreach (var style in new[] { tipText, tipBold, tipNext, tipLabel }) style.wordWrap = true;
-        foreach (var style in new[] { slotName, slotSub }) style.clipping = TextClipping.Clip;
+        foreach (var style in new[] { slotName, slotSub })
+        {
+            style.wordWrap = false;
+            style.clipping = TextClipping.Clip;
+        }
+        slotWidth = 0f;
     }
 
     /// <summary>The lines in the slot row: the weapon slots, empty ones as null, then any fleet lines taken.</summary>
@@ -265,6 +281,33 @@ static class Rings
 
     internal static float SlotHeight(float s) => 48f * s;
 
+    const float SlotPad = 10f, SlotRing = 32f, SlotTextGap = 9f, SlotGap = 4f;
+
+    /// <summary>A slot's rank and countdown at their longest, so a slot never changes width as it ranks up.</summary>
+    static string LongestSub(Upgrade line) => $"{line.MaxRank}/{line.MaxRank} · ability in {line.MaxRank}";
+
+    /// <summary>
+    /// A slot's width: the ring and the longest name or rank line any upgrade
+    /// has, measured so the text fits on one line in whatever font was found.
+    /// The same for every line, so taking one doesn't reflow the row.
+    /// </summary>
+    static float SlotWidth(float s)
+    {
+        Styles(s);
+        if (slotWidth > 0f) return slotWidth;
+        float text = slotName.CalcSize(new GUIContent("Empty slot")).x;
+        foreach (var line in Upgrades.All)
+            text = Mathf.Max(text, Mathf.Max(slotName.CalcSize(new GUIContent(line.Short)).x, slotSub.CalcSize(new GUIContent(LongestSub(line))).x));
+        return slotWidth = (SlotPad + SlotRing + SlotTextGap + SlotPad) * s + Mathf.Ceil(text);
+    }
+
+    /// <summary>How wide the slot row must be to show every slot's text in full.</summary>
+    internal static float RowWidth(Run run, float s)
+    {
+        int count = Slots(run).Count;
+        return count * SlotWidth(s) + (count - 1) * SlotGap * s;
+    }
+
     /// <summary>
     /// The slot row across <paramref name="row"/>: a ring, the line's name,
     /// and its rank with the ranks to its next ability. Hovering a slot opens
@@ -274,7 +317,7 @@ static class Rings
     {
         Styles(s);
         var slots = Slots(run);
-        float gap = 4f * s, width = (row.width - gap * (slots.Count - 1)) / slots.Count;
+        float gap = SlotGap * s, width = (row.width - gap * (slots.Count - 1)) / slots.Count;
         Upgrade hovered = null;
         Rect hoveredBox = default;
         for (int i = 0; i < slots.Count; i++)
@@ -289,13 +332,13 @@ static class Rings
                 hoveredBox = box;
             }
 
-            float diameter = (line?.Kind == Kind.Fleet ? 28f : 32f) * s;
-            float pad = 10f * s;
+            float diameter = (line?.Kind == Kind.Fleet ? 28f : SlotRing) * s;
+            float pad = SlotPad * s;
             var ring = new Rect(box.x + pad, box.center.y - diameter / 2f, diameter, diameter);
             int rank = line == null ? 0 : run.RankOf(line);
             Draw(ring, line, rank);
 
-            float textX = ring.xMax + 9f * s, textWidth = box.xMax - textX - 4f * s;
+            float textX = box.x + (SlotPad + SlotRing + SlotTextGap) * s, textWidth = box.xMax - textX - pad;
             float nameHeight = slotName.CalcSize(new GUIContent("A")).y, subHeight = slotSub.CalcSize(new GUIContent("A")).y;
             float top = box.center.y - (nameHeight + subHeight) / 2f;
             slotName.normal.textColor = line == null ? new Color(Hud.Label.r, Hud.Label.g, Hud.Label.b, 0.6f) : Hud.Value;

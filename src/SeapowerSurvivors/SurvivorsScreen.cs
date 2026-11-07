@@ -30,6 +30,7 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
     public List<ShipRow> Flagships { get; private set; }
     public List<ShipRow> Escorts { get; private set; }
     public string FleetSummary { get; private set; }
+    public FormationEditor Formation { get; }
     public List<BonusRow> Bonuses { get; private set; }
     public string RefundText { get; private set; }
     public string Message { get; private set; } = "";
@@ -42,20 +43,29 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
     public List<EnsignCard> EnsignCards { get; private set; }
     public Visibility MainPage => choosingEnsigns ? Visibility.Collapsed : Visibility.Visible;
     public Visibility EnsignPage => choosingEnsigns ? Visibility.Visible : Visibility.Collapsed;
+    /// <summary>The Formation Editor, a window over the screen as it is in the game's Task Force mode.</summary>
+    public Visibility FormationWindow => placingShips ? Visibility.Visible : Visibility.Collapsed;
     public string BackText => choosingEnsigns ? "DONE" : "BACK";
 
     public ICommand BackCommand { get; }
     public ICommand LaunchCommand { get; }
     public ICommand RefundCommand { get; }
     public ICommand EnsignsCommand { get; }
+    public ICommand FormationCommand { get; }
+    public ICommand CloseFormationCommand { get; }
 
     bool choosingEnsigns;
+    bool placingShips;
+    FormationPlot plot;
 
     static Profile Profile => Profile.Current;
 
     SurvivorsScreen()
     {
+        Formation = new FormationEditor(Refresh);
         EnsignsCommand = new DelegateCommand(_ => ShowEnsigns(true));
+        FormationCommand = new DelegateCommand(_ => ShowFormation(true));
+        CloseFormationCommand = new DelegateCommand(_ => ShowFormation(false));
         BackCommand = new DelegateCommand(_ =>
         {
             if (choosingEnsigns)
@@ -76,10 +86,13 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
 
     internal static void Show()
     {
+        var view = Views.Load("SurvivorsScreen.xaml");
+        var screen = new SurvivorsScreen();
+        screen.plot = new FormationPlot((Canvas)view.FindName("StationPlot"), screen.Formation);
         Singleton<MenuSystemViewModel>.Instance.CurrentWindow = new UserControl
         {
-            Content = Views.Load("SurvivorsScreen.xaml"),
-            DataContext = new SurvivorsScreen(),
+            Content = view,
+            DataContext = screen,
         };
     }
 
@@ -104,6 +117,12 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
         Changed(nameof(MainPage));
         Changed(nameof(EnsignPage));
         Changed(nameof(BackText));
+    }
+
+    void ShowFormation(bool show)
+    {
+        placingShips = show;
+        Changed(nameof(FormationWindow));
     }
 
     /// <summary>Click an ensign: unlock it if it can be, hoist it if there is room, strike it if it is flying.</summary>
@@ -167,9 +186,11 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
         var sailing = Setup.Sailing(profile);
         FleetSummary = sailing.Count == 0
             ? $"{flagship.Name} sails alone."
-            : profile.HoistedEnsigns().Contains(Ensigns.FiveOfAKind)
+            : Setup.OneEscortOnly(profile)
                 ? $"{flagship.Name} sails with {Ensigns.EscortCopies} × {sailing[0].Name}."
                 : $"{flagship.Name} sails with {string.Join(", ", sailing.Select(e => e.Name))}.";
+
+        Formation.Rebuild();
 
         Bonuses = Store.PowerUps.Select(powerUp => new BonusRow(profile, powerUp, () =>
         {
@@ -229,16 +250,21 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
         string detail = (escort.IsAir ? $"Flight of {escort.Count}: " : "Ship: ") + SeapowerSurvivors.Escorts.Describe(escort.Roles);
         if (profile.Owns(item.Id))
         {
-            bool sails = !profile.IsAshore(item.Id);
-            return new ShipRow(escort.Name, detail, sails ? "Sails" : "Ashore", sails, false, () =>
+            bool sails = Setup.Sailing(profile).Contains(escort);
+            string name = sails && Setup.OneEscortOnly(profile) ? $"{escort.Name} ×{Ensigns.EscortCopies}" : escort.Name;
+            return new ShipRow(name, detail, sails ? "Sails" : "Ashore", sails, false, () =>
             {
-                profile.SetAshore(item.Id, sails);
+                Setup.SetSails(profile, escort, !sails);
                 Refresh();
             }, canClick: true);
         }
         return new ShipRow(escort.Name, detail, $"{item.Price:N0} XP", false, true, () =>
         {
-            if (profile.TryBuy(item)) Say($"{escort.Name} bought for {item.Price:N0} XP: it sails with the flagship");
+            if (profile.TryBuy(item))
+            {
+                Setup.SetSails(profile, escort, true);
+                Say($"{escort.Name} bought for {item.Price:N0} XP: it sails with the flagship");
+            }
             Refresh();
         }, canClick: profile.CanBuy(item));
     }
