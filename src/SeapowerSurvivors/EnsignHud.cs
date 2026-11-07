@@ -20,8 +20,8 @@ static class EnsignHud
         int Size(float px) => Mathf.Max(8, Mathf.RoundToInt(px * s));
         title = Hud.Text(Size(14), Hud.Value, TextAnchor.UpperLeft, FontStyle.Bold);
         navy = Hud.Text(Size(11), Hud.Label, TextAnchor.UpperLeft);
-        boon = Hud.Text(Size(13), Hud.Value, TextAnchor.UpperLeft);
-        tally = Hud.Text(Size(13), Hud.Label, TextAnchor.UpperLeft);
+        boon = Hud.Text(Size(12), Hud.Value, TextAnchor.UpperLeft);
+        tally = Hud.Text(Size(12), Hud.Label, TextAnchor.UpperLeft);
         tallyCount = Hud.Text(Size(10), Hud.Value, TextAnchor.MiddleCenter);
         boon.wordWrap = true;
     }
@@ -64,7 +64,7 @@ static class EnsignHud
         float height = pad + titleHeight + navyHeight + 8f * s + boonHeight + tallyHeight + pad;
         float x = Mathf.Clamp(flag.center.x - width / 2f, 4f, Screen.width - width - 4f);
         var panel = new Rect(x, under.yMax + 4f * s, width, height);
-        Hud.Box(panel);
+        Hud.Box(panel, Hud.Dark);
         float y = panel.y + pad;
         GUI.Label(new Rect(panel.x + pad, y, inner, titleHeight), ensign.Name, title);
         y += titleHeight;

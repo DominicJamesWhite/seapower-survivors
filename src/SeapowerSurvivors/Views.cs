@@ -19,17 +19,6 @@ static class Views
         using var reader = new StreamReader(stream);
         return (FrameworkElement)GUI.ParseXaml(reader.ReadToEnd());
     }
-
-    internal static readonly Brush Clear = Solid(0x00, 0x00, 0x00, 0x00);
-    internal static readonly Brush Amber = Solid(0xFF, 0xF0, 0xA0, 0x30);
-    internal static readonly Brush Text = Solid(0xFF, 0xE8, 0xE8, 0xE8);
-    internal static readonly Brush Muted = Solid(0xFF, 0xB0, 0xB6, 0xBD);
-    /// <summary>A row or pip not chosen or not owned.</summary>
-    internal static readonly Brush Off = Solid(0xFF, 0x46, 0x4C, 0x54);
-    internal static readonly Brush Row = Solid(0xFF, 0x22, 0x26, 0x2B);
-    internal static readonly Brush ChosenRow = Solid(0xFF, 0x30, 0x36, 0x3D);
-
-    static Brush Solid(byte a, byte r, byte g, byte b) => new SolidColorBrush(Color.FromArgb(a, r, g, b));
 }
 
 /// <summary>

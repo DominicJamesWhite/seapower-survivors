@@ -747,8 +747,8 @@ public class Director : MonoBehaviour
         if (holdScale != scale)
         {
             holdScale = scale;
-            holdTitle = Hud.Text(Mathf.RoundToInt(22 * scale), Hud.Accent, TextAnchor.MiddleCenter, FontStyle.Bold);
-            holdHint = Hud.Text(Mathf.RoundToInt(14 * scale), Hud.Value, TextAnchor.MiddleCenter);
+            holdTitle = Hud.Text(Mathf.RoundToInt(16 * scale), Hud.Value, TextAnchor.MiddleCenter);
+            holdHint = Hud.Text(Mathf.RoundToInt(12 * scale), Hud.Label, TextAnchor.MiddleCenter);
         }
         const string title = "SURVIVORS", hint = "Unpause to begin the run.";
         float pad = 16f * scale;
@@ -807,7 +807,7 @@ public class Director : MonoBehaviour
         {
             hudScale = scale;
             hudLabel = Hud.Text(Mathf.RoundToInt(12 * scale), Hud.Label);
-            hudValue = Hud.Text(Mathf.RoundToInt(20 * scale), Hud.Value, style: FontStyle.Bold);
+            hudValue = Hud.Text(Mathf.RoundToInt(16 * scale), Hud.Value, style: FontStyle.Bold);
             hudLabel.wordWrap = hudValue.wordWrap = false;
         }
         float pad = 16f * scale, gap = 28f * scale, barHeight = 4f * scale;
@@ -839,8 +839,8 @@ public class Director : MonoBehaviour
         // Progress to the next level, along the panel's foot.
         float progress = Mathf.Clamp01(run.XpIntoLevel / toNext);
         var track = new Rect(panel.x + 1f, panel.yMax - barHeight - 1f, panel.width - 2f, barHeight);
-        Hud.Fill(track, new Color(1f, 1f, 1f, 0.08f));
-        Hud.Fill(new Rect(track.x, track.y, track.width * progress, track.height), Hud.Accent);
+        Hud.Fill(track, Hud.Dark);
+        Hud.Fill(new Rect(track.x, track.y, track.width * progress, track.height), Hud.Red);
 
         // The slots: a row of rings under the panel, as wide as it. Hovering one opens its panel below.
         var slots = new Rect(panel.x, panel.yMax + 6f * scale, panel.width, Rings.SlotHeight(scale));

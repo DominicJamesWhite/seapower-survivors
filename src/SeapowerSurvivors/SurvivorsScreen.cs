@@ -38,7 +38,7 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
     public List<EnsignSlot> EnsignSlots { get; private set; }
     public string EnsignSummary { get; private set; }
     public string EnsignBudget { get; private set; }
-    public List<Brush> EnsignPips { get; private set; }
+    public List<bool> EnsignPips { get; private set; }
     public List<EnsignCard> EnsignCards { get; private set; }
     public Visibility MainPage => choosingEnsigns ? Visibility.Collapsed : Visibility.Visible;
     public Visibility EnsignPage => choosingEnsigns ? Visibility.Visible : Visibility.Collapsed;
@@ -182,7 +182,7 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
         int spent = Ensigns.PointsFlown(hoisted);
         // The wording of the game's own Task Force builder.
         EnsignBudget = $"{Ensigns.Budget - spent} available of {Ensigns.Budget} pts";
-        EnsignPips = Enumerable.Range(0, Ensigns.Budget).Select(i => i < spent ? Views.Amber : Views.Off).ToList();
+        EnsignPips = Enumerable.Range(0, Ensigns.Budget).Select(i => i < spent).ToList();
         EnsignSummary = hoisted.Count == 0 ? "None flying" : string.Join(", ", hoisted.Select(e => e.Name));
         EnsignCards = Ensigns.All.Select(e => new EnsignCard(profile, e, hoisted, () => ClickEnsign(profile, e))).ToList();
 
@@ -209,10 +209,10 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
         var item = Store.Flagship(ship);
         string navy = ship.Soviet ? "Soviet: fights NATO" : "US Navy: fights the Soviets";
         if (profile.Owns(item.Id))
-            return new ShipRow(ship.Name, navy, chosen ? "Flagship" : "Owned", chosen, chosen, () => Choose(area, ship), canClick: true);
+            return new ShipRow(ship.Name, navy, chosen ? "Flagship" : "Owned", chosen, false, () => Choose(area, ship), canClick: true);
         if (item.WonBy != null)
             return new ShipRow(ship.Name, $"{navy}. {item.WonBy} to unlock", "Locked", false, false, () => { }, canClick: false);
-        return new ShipRow(ship.Name, navy, $"{item.Price:N0} XP", false, false, () =>
+        return new ShipRow(ship.Name, navy, $"{item.Price:N0} XP", false, true, () =>
             {
                 if (profile.TryBuy(item))
                 {
@@ -236,7 +236,7 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
                 Refresh();
             }, canClick: true);
         }
-        return new ShipRow(escort.Name, detail, $"{item.Price:N0} XP", false, false, () =>
+        return new ShipRow(escort.Name, detail, $"{item.Price:N0} XP", false, true, () =>
         {
             if (profile.TryBuy(item)) Say($"{escort.Name} bought for {item.Price:N0} XP: it sails with the flagship");
             Refresh();
@@ -258,7 +258,7 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
     static string Compass(float bearing) => Points[(int)Math.Round(((bearing % 360f) + 360f) % 360f / 45f) % 8];
 }
 
-/// <summary>An area to fight in: Quick Start's painting if it can be found, its name, and a frame when chosen.</summary>
+/// <summary>An area to fight in: Quick Start's painting if it can be found, its name, and whether it is chosen.</summary>
 public sealed class AreaCard
 {
     static readonly Dictionary<string, ImageSource> ArtCache = new Dictionary<string, ImageSource>();
@@ -266,7 +266,7 @@ public sealed class AreaCard
     public string Name { get; }
     public string Region { get; }
     public ImageSource Art { get; }
-    public Brush Frame { get; }
+    public bool Selected { get; }
     public ICommand Command { get; }
 
     internal AreaCard(Area area, bool chosen, Action choose)
@@ -274,7 +274,7 @@ public sealed class AreaCard
         Name = area.Name;
         Region = area.Region;
         Art = LoadArt(area);
-        Frame = chosen ? Views.Amber : Views.Clear;
+        Selected = chosen;
         Command = new DelegateCommand(_ => choose());
     }
 
@@ -317,19 +317,19 @@ public sealed class ShipRow
     public string Detail { get; }
     public Visibility DetailVisibility => string.IsNullOrEmpty(Detail) ? Visibility.Collapsed : Visibility.Visible;
     public string State { get; }
-    public Brush StateBrush { get; }
-    public Brush Bar { get; }
-    public Brush Fill { get; }
+    /// <summary>The flagship, or a ship that sails: a selected row in the game's lists.</summary>
+    public bool Selected { get; }
+    /// <summary>The state is a price.</summary>
+    public bool Emphasis { get; }
     public ICommand Command { get; }
 
-    internal ShipRow(string name, string detail, string state, bool lit, bool chosen, Action click, bool canClick)
+    internal ShipRow(string name, string detail, string state, bool selected, bool forSale, Action click, bool canClick)
     {
         Name = name;
         Detail = detail;
         State = state;
-        StateBrush = lit ? Views.Amber : Views.Muted;
-        Bar = lit ? Views.Amber : Views.Off;
-        Fill = chosen ? Views.ChosenRow : Views.Row;
+        Selected = selected;
+        Emphasis = forSale;
         Command = new DelegateCommand(_ => canClick, _ => click());
     }
 }
@@ -356,9 +356,9 @@ public sealed class EnsignCard
     public string Boon { get; }
     public string Points { get; }
     public string State { get; }
-    public Brush StateBrush { get; }
-    public Brush Bar { get; }
-    public Brush Fill { get; }
+    public bool Selected { get; }
+    /// <summary>The state is a price.</summary>
+    public bool Emphasis { get; }
     public double FlagOpacity { get; }
     public double CardOpacity { get; }
     public ICommand Command { get; }
@@ -382,9 +382,8 @@ public sealed class EnsignCard
             : !enough ? $"Not enough points (needs {ensign.Points} / {available})"
             : "Owned";
         CardOpacity = flying || (clash == null && fits && enough) ? 1.0 : 0.6;
-        StateBrush = flying ? Views.Amber : Views.Muted;
-        Bar = flying ? Views.Amber : Views.Off;
-        Fill = flying ? Views.ChosenRow : Views.Row;
+        Selected = flying;
+        Emphasis = !flying && !owned;
         FlagOpacity = owned ? 1.0 : 0.45;
         var item = Store.EnsignItem(ensign);
         Command = new DelegateCommand(_ => owned || profile.CanBuy(item), _ => click());
@@ -396,7 +395,7 @@ public sealed class BonusRow
 {
     public string Name { get; }
     public string PerRank { get; }
-    public List<Brush> Pips { get; }
+    public List<bool> Pips { get; }
     public string Price { get; }
     public ICommand Command { get; }
 
@@ -405,7 +404,7 @@ public sealed class BonusRow
         int rank = profile.RankOf(powerUp);
         Name = powerUp.Name;
         PerRank = powerUp.PerRank;
-        Pips = Enumerable.Range(0, powerUp.MaxRank).Select(i => i < rank ? Views.Amber : Views.Off).ToList();
+        Pips = Enumerable.Range(0, powerUp.MaxRank).Select(i => i < rank).ToList();
         Price = rank >= powerUp.MaxRank ? "MAX" : $"{Store.Price(profile, powerUp):N0} XP";
         Command = new DelegateCommand(_ => profile.CanBuyRank(powerUp), _ => buy());
     }

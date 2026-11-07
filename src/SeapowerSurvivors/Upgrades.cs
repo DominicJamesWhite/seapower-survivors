@@ -108,12 +108,13 @@ static class Rarities
     static readonly float[] Weights = { 70f, 22f, 7f, 1f };
     /// <summary>Each rank of Luck raises a rarity's weight by this fraction.</summary>
     static readonly float[] LuckPerRank = { 0f, 0.25f, 0.5f, 1f };
+    /// <summary>The game's crew skill colours, to go with the crew skill marks of <see cref="Hud.RarityBadge"/>.</summary>
     static readonly Color[] Colours =
     {
-        new Color(0.62f, 0.66f, 0.70f),
-        new Color(0.31f, 0.64f, 1f),
-        new Color(0.75f, 0.42f, 1f),
-        new Color(1f, 0.69f, 0.13f),
+        Hud.Hex(0x949AA1),
+        Hud.Hex(0xD1D7DC),
+        Hud.Hex(0xB8873A),
+        Hud.Hex(0xF5CB4B),
     };
 
     /// <summary>Ranks a card gives: 1, 2, 3 or 4.</summary>

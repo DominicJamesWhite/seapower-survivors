@@ -15,7 +15,7 @@ public class LevelUpScreen : MonoBehaviour
 {
     const int Choices = 3;
     /// <summary>At 1080p; scaled with the screen.</summary>
-    const float CardWidth = 320f, CardHeight = 330f, Gap = 16f;
+    const float CardWidth = 320f, CardHeight = 300f, Gap = 16f;
     const float BanishHeight = 30f;
 
     /// <summary>True while the screen owns the pause; the time-compression patches below defer to it.</summary>
@@ -163,10 +163,10 @@ public class LevelUpScreen : MonoBehaviour
     }
 
     /// <summary>
-    /// Drawn in the game's own look, as the status line is: its UI font on
-    /// dark translucent panels with a faint edge, small grey capitals for
-    /// labels, the accent orange for what matters, and each card's rarity as
-    /// a coloured strip along its top. Sized for 1080p and scaled with the screen.
+    /// Drawn in the game's own look, as the status line is: its modal window
+    /// and veil, its window colour for cards, caps on buttons and field labels
+    /// only, and each card's rarity as a crew skill mark and a thin strip along
+    /// its top, like a tab's. Sized for 1080p and scaled with the screen.
     /// </summary>
     void OnGUI()
     {
@@ -185,10 +185,9 @@ public class LevelUpScreen : MonoBehaviour
         float panelHeight = pad + 56f * s + cardHeight + banish + 20f * s + ButtonHeight * s + pad;
         var panel = new Rect((Screen.width - panelWidth) / 2f, (Screen.height - panelHeight) / 2f, panelWidth, panelHeight);
 
-        // Dim the map behind, so the cards read as the one thing to do.
-        Hud.Fill(new Rect(0f, 0f, Screen.width, Screen.height), new Color(0f, 0f, 0f, 0.35f));
-        Hud.Box(panel);
-        Hud.Fill(new Rect(panel.x + 1f, panel.y + 1f, panel.width - 2f, 3f * s), Hud.Accent);
+        // The game's modal: the map behind veiled, so the cards read as the one thing to do.
+        Hud.Fill(new Rect(0f, 0f, Screen.width, Screen.height), Hud.Veil);
+        Hud.Box(panel, Hud.Modal);
 
         float x0 = panel.x + pad, y = panel.y + pad;
         // Fewer cards than the panel holds sit in its middle.
@@ -218,7 +217,7 @@ public class LevelUpScreen : MonoBehaviour
                 string kind = escort.IsAir ? (escort.Count > 1 ? $"{escort.Count} AIRCRAFT" : "AIRCRAFT") : "SHIP";
                 string adds = Escorts.Adds(run, escort);
                 string footer = escort.IsAir ? "Unlimited fuel; under your command" : "Under your command; takes every upgrade";
-                if (Card(rect, Hud.Accent, $"{kind} · TIER {escort.Tier}", null, escort.Name,
+                if (Card(rect, Hud.Red, $"{kind} · TIER {escort.Tier}", null, escort.Name,
                         Escorts.Describe(escort.Roles), adds, new List<string> { footer }))
                 {
                     Pick(run, escort);
@@ -234,7 +233,7 @@ public class LevelUpScreen : MonoBehaviour
                 var (stats, abilities) = Upgrades.CardText(run, upgrade, ranks);
                 if (Card(rect, Rarities.Colour(rarity), $"{rarity.ToString().ToUpperInvariant()} · {kind}", rank, upgrade.Name,
                         string.Join("\n", stats), abilities.Count > 0 ? string.Join("\n", abilities) : null, preview,
-                        ring => Rings.Draw(ring, upgrade, held, ranks, icon: false)))
+                        ring => Rings.Draw(ring, upgrade, held, ranks, icon: false), rarity))
                 {
                     Pick(run, upgrade, rarity);
                     return;
@@ -258,7 +257,6 @@ public class LevelUpScreen : MonoBehaviour
     }
 
     const float ButtonHeight = 36f;
-    static readonly Color Hover = new Color(1f, 1f, 1f, 0.06f);
 
     float styleScale;
     GUIStyle caps, capsRight, heading, cardTitle, body, accentBody, detail, button;
@@ -269,39 +267,43 @@ public class LevelUpScreen : MonoBehaviour
         int Size(float px) => Mathf.Max(8, Mathf.RoundToInt(px * s));
         caps = Hud.Text(Size(12), Hud.Label);
         capsRight = Hud.Text(Size(12), Hud.Label, TextAnchor.MiddleRight);
-        heading = Hud.Text(Size(26), Hud.Value, style: FontStyle.Bold);
-        cardTitle = Hud.Text(Size(20), Hud.Value, TextAnchor.UpperLeft, FontStyle.Bold);
+        heading = Hud.Text(Size(24), Hud.Value);
+        cardTitle = Hud.Text(Size(16), Hud.Value, TextAnchor.UpperLeft, FontStyle.Bold);
         cardTitle.wordWrap = true;
-        body = Hud.Text(Size(15), Hud.Value, TextAnchor.UpperLeft);
+        body = Hud.Text(Size(12), Hud.Value, TextAnchor.UpperLeft);
         body.wordWrap = true;
-        accentBody = Hud.Text(Size(14), Hud.Value, TextAnchor.UpperLeft, FontStyle.Bold);
+        accentBody = Hud.Text(Size(12), Hud.Value, TextAnchor.UpperLeft, FontStyle.Bold);
         accentBody.wordWrap = true;
-        detail = Hud.Text(Size(13), Hud.Label, TextAnchor.UpperLeft);
+        detail = Hud.Text(Size(11), Hud.Label, TextAnchor.UpperLeft);
         detail.wordWrap = true;
-        button = Hud.Text(Size(13), Hud.Value, TextAnchor.MiddleCenter, FontStyle.Bold);
+        button = Hud.Text(Size(12), Hud.Label, TextAnchor.MiddleCenter);
     }
 
     /// <summary>
-    /// One card: a panel with a coloured strip, a caps line, a name, what it
-    /// does, its abilities in bold, and detail below a rule; a ring, when
-    /// given, sits beside the name. True when clicked.
+    /// One card: a panel with a coloured strip, a caps line after any rarity's
+    /// badge, a name, what it does, its abilities in bold, and detail below a
+    /// rule; a ring, when given, sits beside the name. True when clicked.
     /// </summary>
     bool Card(Rect rect, Color strip, string kind, string corner, string title, string text, string highlight, List<string> lines,
-        System.Action<Rect> ring = null)
+        System.Action<Rect> ring = null, Rarity? rarity = null)
     {
         float s = styleScale;
         bool hover = rect.Contains(Event.current.mousePosition);
-        Hud.Box(rect);
-        if (hover)
-        {
-            Hud.Fill(rect, Hover);
-            Hud.Fill(new Rect(rect.x, rect.yMax - 2f * s, rect.width, 2f * s), strip);
-        }
-        Hud.Fill(new Rect(rect.x + 1f, rect.y + 1f, rect.width - 2f, 4f * s), strip);
+        // The game's list colours, with the red edge of its Task Force buttons.
+        Hud.Box(rect, hover ? Hud.Control : Hud.Panel);
+        if (hover) Hud.Frame(rect, Hud.Red);
+        Hud.Fill(new Rect(rect.x + 1f, rect.y + 1f, rect.width - 2f, 2f * s), strip);
 
         float pad = 16f * s, width = rect.width - 2f * pad, x = rect.x + pad, y = rect.y + 18f * s;
+        float kindX = x;
+        if (rarity.HasValue)
+        {
+            float badgeHeight = 14f * s, badgeWidth = Hud.BadgeWidthFor(badgeHeight);
+            Hud.RarityBadge(new Rect(x, y + 1f * s, badgeWidth, badgeHeight), rarity.Value, strip);
+            kindX += badgeWidth + 4f * s;
+        }
         caps.normal.textColor = strip;
-        GUI.Label(new Rect(x, y, width, 16f * s), kind, caps);
+        GUI.Label(new Rect(kindX, y, width - (kindX - x), 16f * s), kind, caps);
         caps.normal.textColor = Hud.Label;
         if (corner != null)
         {
@@ -339,13 +341,12 @@ public class LevelUpScreen : MonoBehaviour
         return y + height;
     }
 
-    /// <summary>A flat button in the panels' style: dark, edged, lit on hover, dimmed when it cannot be used.</summary>
+    /// <summary>The game's button: flat grey, red with light text on hover, darker with faint text when it cannot be used.</summary>
     bool FlatButton(Rect rect, string text, bool enabled)
     {
         bool hover = enabled && rect.Contains(Event.current.mousePosition);
-        Hud.Box(rect);
-        if (hover) Hud.Fill(rect, Hover);
-        button.normal.textColor = !enabled ? new Color(1f, 1f, 1f, 0.3f) : hover ? Hud.Accent : Hud.Value;
+        Hud.Fill(rect, !enabled ? Hud.Dark : hover ? Hud.Red : Hud.Control);
+        button.normal.textColor = !enabled ? Hud.Edge : hover ? Hud.Value : Hud.Label;
         GUI.Label(rect, text, button);
         return enabled && GUI.Button(rect, GUIContent.none, GUIStyle.none);
     }

@@ -1,110 +1,191 @@
 <!-- The Survivors screen, in the game's menu in place of the main menu: where to fight, what to sail with, and the
-     permanent bonuses every run gets, then BACK or LAUNCH. Three columns that scroll on their own within the screen's
-     height, with the buttons in a footer below them. Explicit colours, the menu's grey and the logo's red, since the
-     menu carries no brushes for a page like this. Laid out at 1080p; the menu scales its pages. Bound to SurvivorsScreen. -->
+     permanent bonuses every run gets, then BACK or LAUNCH. Three panes that scroll on their own within the screen's
+     height, with the buttons in a footer below them. Colours, buttons and sizes are the game's own, from its theme
+     (NoesisTheme.Brushes.DarkRed, NoesisTheme.Fonts, SeaPower.Theme.Custom): resources are looked up dynamically, as
+     Dynamic Campaign Mod's are, and Buttons without a Style take the game's. Caps on buttons and field labels only.
+     Laid out at 1080p; the menu scales its pages. Bound to SurvivorsScreen. -->
 <Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-      Background="#C0000000">
+      Background="{DynamicResource Brush.Window.BackgroundDark}"
+      TextElement.Foreground="{DynamicResource Brush.Foreground.Normal}">
     <Grid.Resources>
-        <SolidColorBrush x:Key="Text" Color="#FFE8E8E8"/>
-        <SolidColorBrush x:Key="Muted" Color="#FFB0B6BD"/>
-        <SolidColorBrush x:Key="Amber" Color="#FFF0A030"/>
-        <SolidColorBrush x:Key="Rule" Color="#FF3A3F45"/>
+        <!-- A list row or card: the game's list colours and press, with the red edge of its Task Force buttons on hover -->
+        <ControlTemplate x:Key="RowTemplate" TargetType="Button">
+            <Grid x:Name="Root" RenderTransformOrigin="0.5,0.5">
+                <Grid.RenderTransform>
+                    <ScaleTransform/>
+                </Grid.RenderTransform>
+                <Border Background="{TemplateBinding Background}"/>
+                <ContentPresenter x:Name="Content" HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
+                <Border x:Name="Edge" BorderBrush="{DynamicResource Brush.Border.FocusAccent}" BorderThickness="0" IsHitTestVisible="False"/>
+            </Grid>
+            <ControlTemplate.Resources>
+                <Storyboard x:Key="Press">
+                    <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="RenderTransform.ScaleX" To="0.99" Duration="0:0:0.1" DecelerationRatio="0.25"/>
+                    <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="RenderTransform.ScaleY" To="0.99" Duration="0:0:0.1" DecelerationRatio="0.25"/>
+                </Storyboard>
+                <Storyboard x:Key="Release">
+                    <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="RenderTransform.ScaleX" To="1" Duration="0:0:0.2" DecelerationRatio="1"/>
+                    <DoubleAnimation Storyboard.TargetName="Root" Storyboard.TargetProperty="RenderTransform.ScaleY" To="1" Duration="0:0:0.2" DecelerationRatio="1"/>
+                </Storyboard>
+            </ControlTemplate.Resources>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource Brush.Item.BackgroundOver}"/>
+                    <Setter TargetName="Edge" Property="BorderThickness" Value="1"/>
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Trigger.EnterActions>
+                        <BeginStoryboard Storyboard="{StaticResource Press}"/>
+                    </Trigger.EnterActions>
+                    <Trigger.ExitActions>
+                        <BeginStoryboard Storyboard="{StaticResource Release}"/>
+                    </Trigger.ExitActions>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Background" Value="{DynamicResource Brush.Button.BackgroundDisabled}"/>
+                    <Setter TargetName="Content" Property="Opacity" Value="0.5"/>
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
 
-        <!-- A button that is only its content, a background and a frame, lit on hover and faded when disabled -->
-        <Style x:Key="Flat" TargetType="Button">
+        <Style x:Key="Row" TargetType="Button">
             <Setter Property="Focusable" Value="False"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="0"/>
-            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Grid>
-                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                                    BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
-                                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
-                            </Border>
-                            <Border x:Name="Hover" Background="#18FFFFFF" Visibility="Collapsed" IsHitTestVisible="False"/>
-                        </Grid>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Hover" Property="Visibility" Value="Visible"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.4"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+            <Setter Property="Background" Value="{DynamicResource Brush.ListBox.Background}"/>
+            <Setter Property="Template" Value="{StaticResource RowTemplate}"/>
+        </Style>
+        <!-- Selected as the game's lists are: a red fill, which a style trigger keeps through the hover -->
+        <Style x:Key="SelectableRow" TargetType="Button" BasedOn="{StaticResource Row}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Selected}" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource Brush.Item.BackgroundSelected}"/>
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
 
+        <!-- The Options menu's section header and the rule under it -->
         <Style x:Key="Heading" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="15"/>
-            <Setter Property="FontWeight" Value="Bold"/>
-            <Setter Property="Foreground" Value="{StaticResource Muted}"/>
-            <Setter Property="Margin" Value="0,0,0,10"/>
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Foreground.Highlight}"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+        <Style x:Key="Rule" TargetType="Border">
+            <Setter Property="Height" Value="1"/>
+            <Setter Property="Background" Value="{DynamicResource Brush.Foreground.Highlight}"/>
+            <Setter Property="Opacity" Value="0.35"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
+        </Style>
+        <!-- The game's debrief panel, without its dark fill: the rows inside carry that -->
+        <Style x:Key="Pane" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource Brush.Window.Background}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border.Normal}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="15"/>
         </Style>
 
-        <!-- A flagship or a starting ship: a lit bar down the left when chosen, the name and what it is, and its state or price -->
+        <Style x:Key="Name" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Foreground.Highlight}"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        </Style>
+        <Style x:Key="Note" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Foreground.Normal}"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        </Style>
+        <!-- Grey on red would not read, so a selected row's quieter text lights up -->
+        <Style x:Key="RowNote" TargetType="TextBlock" BasedOn="{StaticResource Note}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Selected}" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Foreground.Highlight}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <!-- A row's state: quiet, in the game's emphasis colour if it is a price -->
+        <Style x:Key="State" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Foreground.Normal}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Emphasis}" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Foreground.Emphasis}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Selected}" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Foreground.Highlight}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="Points" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Foreground.Emphasis}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Selected}" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Foreground.Highlight}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- A rank or a point, filled in the colour of the game's progress bars -->
+        <Style x:Key="Pip" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource Brush.Track.Normal}"/>
+            <Setter Property="Height" Value="4"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding}" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource Brush.ProgressBar.Fill}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- A flagship or a starting ship: the name and what it is, and its state or price -->
         <DataTemplate x:Key="ShipRow">
-            <Button Style="{StaticResource Flat}" Command="{Binding Command}" Background="{Binding Fill}" Margin="0,0,0,6" Height="50">
+            <Button Style="{StaticResource SelectableRow}" Command="{Binding Command}" Margin="0,0,0,4" Height="44">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="5"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <Border Background="{Binding Bar}"/>
-                    <StackPanel Grid.Column="1" Margin="14,0,8,0" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding Name}" FontSize="17" Foreground="{StaticResource Text}" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="{Binding Detail}" FontSize="12" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis"
-                                   Visibility="{Binding DetailVisibility}"/>
+                    <StackPanel Margin="12,0,8,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Name}" Style="{StaticResource Name}"/>
+                        <TextBlock Text="{Binding Detail}" Style="{StaticResource RowNote}" Visibility="{Binding DetailVisibility}"/>
                     </StackPanel>
-                    <TextBlock Grid.Column="2" Text="{Binding State}" FontSize="14" Foreground="{Binding StateBrush}" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                    <TextBlock Grid.Column="1" Text="{Binding State}" Style="{StaticResource State}" VerticalAlignment="Center" Margin="0,0,12,0"/>
                 </Grid>
             </Button>
         </DataTemplate>
     </Grid.Resources>
 
     <!-- The menu scales pages by the screen's height, so the width left at 1080p is narrower on a 16:10 screen than at 16:9 -->
-    <Border HorizontalAlignment="Stretch" VerticalAlignment="Stretch" MaxWidth="1680" Margin="24,40" Padding="32,24"
-            Background="#F2181B1F" BorderBrush="{StaticResource Rule}" BorderThickness="1">
-        <Grid>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
+    <Grid Margin="33,0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
 
-            <!-- Header: the title and the bank -->
-            <Grid Margin="0,0,0,20">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <Border Width="5" HorizontalAlignment="Left" Background="#FFA4161A"/>
-                <StackPanel Margin="20,0,0,0">
-                    <TextBlock Text="SURVIVORS" FontSize="36" Foreground="#FFFFFFFF"/>
-                    <TextBlock Text="Hold out for 75 minutes of game time against waves of ships and aircraft. Every kill is XP; every level is an upgrade."
-                               FontSize="15" Foreground="{StaticResource Muted}" Margin="0,2,0,0"/>
-                </StackPanel>
-                <StackPanel Grid.Column="1" VerticalAlignment="Bottom" HorizontalAlignment="Right">
-                    <TextBlock Text="{Binding Bank}" FontSize="24" Foreground="{StaticResource Amber}" HorizontalAlignment="Right"/>
-                    <TextBlock Text="{Binding Earned}" FontSize="13" Foreground="{StaticResource Muted}" HorizontalAlignment="Right"/>
-                </StackPanel>
-            </Grid>
+        <!-- Header: the title and the bank -->
+        <Grid Margin="0,0,0,15">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Text="SURVIVORS" FontSize="36" Foreground="{DynamicResource Brush.Foreground.Highlight}" Margin="0,17.5,0,0"/>
+                <TextBlock Text="Hold out for 75 minutes of game time against waves of ships and aircraft. Every kill is XP; every level is an upgrade."
+                           FontSize="12" Margin="0,2,0,0"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" VerticalAlignment="Bottom" HorizontalAlignment="Right">
+                <TextBlock Text="{Binding Bank}" FontSize="16" Foreground="{DynamicResource Brush.Foreground.Emphasis}" HorizontalAlignment="Right"/>
+                <TextBlock Text="{Binding Earned}" FontSize="12" HorizontalAlignment="Right"/>
+            </StackPanel>
+        </Grid>
 
-            <!-- Choosing ensigns: every flag, what it does and takes from the budget. Click to unlock, hoist or strike. -->
-            <ScrollViewer Grid.Row="1" Visibility="{Binding EnsignPage}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <!-- Choosing ensigns: every flag, what it does and takes from the budget. Click to unlock, hoist or strike. -->
+        <Border Grid.Row="1" Style="{StaticResource Pane}" Visibility="{Binding EnsignPage}">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel>
                     <StackPanel Width="440" HorizontalAlignment="Left" Margin="0,0,0,12">
-                        <Grid Margin="0,0,0,5">
-                            <TextBlock Text="ENSIGNS" Style="{StaticResource Heading}" Margin="0"/>
-                            <TextBlock Text="{Binding EnsignBudget}" FontSize="13" Foreground="{StaticResource Text}" HorizontalAlignment="Right" VerticalAlignment="Bottom"/>
+                        <Grid>
+                            <TextBlock Text="Ensigns" Style="{StaticResource Heading}"/>
+                            <TextBlock Text="{Binding EnsignBudget}" FontSize="12" Foreground="{DynamicResource Brush.Foreground.Highlight}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,0,4"/>
                         </Grid>
                         <ItemsControl ItemsSource="{Binding EnsignPips}">
                             <ItemsControl.ItemsPanel>
@@ -112,7 +193,7 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Background="{Binding}" Height="6" Margin="0,0,3,0"/>
+                                    <Border Style="{StaticResource Pip}" Margin="0,0,3,0"/>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
@@ -123,60 +204,55 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Button Style="{StaticResource Flat}" Command="{Binding Command}" Background="{Binding Fill}" Opacity="{Binding CardOpacity}" Margin="0,0,8,8">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="5"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Border Background="{Binding Bar}"/>
-                                        <StackPanel Grid.Column="1" Margin="12,10,10,10">
-                                            <Grid Margin="0,0,0,8">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <Image Source="{Binding Flag}" Width="54" Height="36" Stretch="Fill" Opacity="{Binding FlagOpacity}"/>
-                                                <StackPanel Grid.Column="1" Margin="10,0,6,0" VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding Name}" FontSize="15" Foreground="{StaticResource Text}" TextTrimming="CharacterEllipsis"/>
-                                                    <TextBlock Text="{Binding Navy}" FontSize="11" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis"/>
-                                                </StackPanel>
-                                                <TextBlock Grid.Column="2" Text="{Binding Points}" FontSize="15" Foreground="{StaticResource Text}" VerticalAlignment="Top"/>
-                                            </Grid>
-                                            <TextBlock Text="{Binding Boon}" FontSize="13" Foreground="{StaticResource Text}" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                                            <TextBlock Text="{Binding State}" FontSize="13" Foreground="{Binding StateBrush}" TextWrapping="Wrap"/>
-                                        </StackPanel>
-                                    </Grid>
+                                <Button Style="{StaticResource SelectableRow}" Command="{Binding Command}" Opacity="{Binding CardOpacity}" Margin="0,0,8,8">
+                                    <StackPanel Margin="12,10">
+                                        <Grid Margin="0,0,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Image Source="{Binding Flag}" Width="54" Height="36" Stretch="Fill" Opacity="{Binding FlagOpacity}"/>
+                                            <StackPanel Grid.Column="1" Margin="10,0,6,0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Name}" Style="{StaticResource Name}"/>
+                                                <TextBlock Text="{Binding Navy}" Style="{StaticResource RowNote}"/>
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="2" Text="{Binding Points}" Style="{StaticResource Points}" VerticalAlignment="Top"/>
+                                        </Grid>
+                                        <TextBlock Text="{Binding Boon}" FontSize="12" Foreground="{DynamicResource Brush.Foreground.Highlight}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                        <TextBlock Text="{Binding State}" Style="{StaticResource State}" TextWrapping="Wrap"/>
+                                    </StackPanel>
                                 </Button>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </StackPanel>
             </ScrollViewer>
+        </Border>
 
-            <Grid Grid.Row="1" Visibility="{Binding MainPage}">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="5*"/>
-                    <ColumnDefinition Width="32"/>
-                    <ColumnDefinition Width="4*"/>
-                    <ColumnDefinition Width="32"/>
-                    <ColumnDefinition Width="3.2*"/>
-                </Grid.ColumnDefinitions>
+        <Grid Grid.Row="1" Visibility="{Binding MainPage}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="5*"/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="4*"/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="3.2*"/>
+            </Grid.ColumnDefinitions>
 
-                <!-- Location: a card for each area, then the chosen one's briefing -->
+            <!-- Location: a card for each area, then the chosen one's briefing -->
+            <Border Style="{StaticResource Pane}">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel>
-                        <TextBlock Text="LOCATION" Style="{StaticResource Heading}"/>
+                        <TextBlock Text="Location" Style="{StaticResource Heading}"/>
+                        <Border Style="{StaticResource Rule}"/>
                         <ItemsControl ItemsSource="{Binding Areas}" Margin="0,0,-10,0">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate><UniformGrid Columns="2"/></ItemsPanelTemplate>
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Button Style="{StaticResource Flat}" Command="{Binding Command}" Height="118" Margin="0,0,10,10">
+                                    <Button Style="{StaticResource Row}" Command="{Binding Command}" Height="118" Margin="0,0,10,10">
                                         <Grid ClipToBounds="True">
-                                            <Border Background="#FF2A3038"/>
                                             <Image Source="{Binding Art}" Stretch="UniformToFill" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                             <Border VerticalAlignment="Bottom" Padding="12,18,12,8">
                                                 <Border.Background>
@@ -186,44 +262,62 @@
                                                     </LinearGradientBrush>
                                                 </Border.Background>
                                                 <StackPanel>
-                                                    <TextBlock Text="{Binding Name}" FontSize="17" Foreground="#FFFFFFFF" TextTrimming="CharacterEllipsis"/>
-                                                    <TextBlock Text="{Binding Region}" FontSize="12" Foreground="#FFD0D4D8" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding Name}" Style="{StaticResource Name}"/>
+                                                    <TextBlock Text="{Binding Region}" FontSize="11" Foreground="{DynamicResource Brush.Foreground.Highlight}" TextTrimming="CharacterEllipsis"/>
                                                 </StackPanel>
                                             </Border>
-                                            <Border BorderBrush="{Binding Frame}" BorderThickness="3"/>
+                                            <!-- The painting would hide a red fill, so a card is selected by a red edge -->
+                                            <Border BorderBrush="{DynamicResource Brush.Item.BackgroundSelected}">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="BorderThickness" Value="0"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Selected}" Value="True">
+                                                                <Setter Property="BorderThickness" Value="2"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                            </Border>
                                         </Grid>
                                     </Button>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <TextBlock Text="{Binding AreaName}" FontSize="22" Foreground="#FFFFFFFF" Margin="0,8,0,4"/>
-                        <TextBlock Text="{Binding AreaBlurb}" FontSize="15" Foreground="{StaticResource Text}" TextWrapping="Wrap" LineHeight="21"/>
-                        <TextBlock Text="{Binding AreaApproach}" FontSize="14" Foreground="{StaticResource Amber}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                        <TextBlock Text="{Binding AreaName}" FontSize="16" Foreground="{DynamicResource Brush.Foreground.Highlight}" Margin="0,8,0,4"/>
+                        <TextBlock Text="{Binding AreaBlurb}" FontSize="12" Foreground="{DynamicResource Brush.Foreground.Highlight}" TextWrapping="Wrap" LineHeight="17"/>
+                        <TextBlock Text="{Binding AreaApproach}" FontSize="12" Foreground="{DynamicResource Brush.Foreground.Emphasis}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                     </StackPanel>
                 </ScrollViewer>
+            </Border>
 
-                <!-- Fleet: the flagship, then the starting ships and flights of its navy -->
-                <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <!-- Fleet: the flagship, then the starting ships and flights of its navy -->
+            <Border Grid.Column="2" Style="{StaticResource Pane}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel>
-                        <TextBlock Text="FLAGSHIP" Style="{StaticResource Heading}"/>
+                        <TextBlock Text="Flagship" Style="{StaticResource Heading}"/>
+                        <Border Style="{StaticResource Rule}"/>
                         <ItemsControl ItemsSource="{Binding Flagships}" ItemTemplate="{StaticResource ShipRow}"/>
-                        <TextBlock Text="STARTING SHIPS AND FLIGHTS" Style="{StaticResource Heading}" Margin="0,18,0,2"/>
-                        <TextBlock Text="Bought ones sail with the flagship. Click one to leave it ashore."
-                                   FontSize="13" Foreground="{StaticResource Muted}" Margin="0,0,0,10"/>
+                        <TextBlock Text="Starting ships and flights" Style="{StaticResource Heading}" Margin="0,14,0,4"/>
+                        <Border Style="{StaticResource Rule}" Margin="0,0,0,8"/>
+                        <TextBlock Text="Bought ones sail with the flagship. Click one to leave it ashore." FontSize="12" Margin="0,0,0,8"/>
                         <ItemsControl ItemsSource="{Binding Escorts}" ItemTemplate="{StaticResource ShipRow}"/>
-                        <TextBlock Text="{Binding FleetSummary}" FontSize="15" Foreground="{StaticResource Text}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                        <TextBlock Text="{Binding FleetSummary}" FontSize="12" Foreground="{DynamicResource Brush.Foreground.Highlight}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                     </StackPanel>
                 </ScrollViewer>
+            </Border>
 
-                <!-- Ensigns, then the starting bonuses: the permanent upgrades, rank by rank -->
-                <ScrollViewer Grid.Column="4" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <!-- Ensigns, then the starting bonuses: the permanent upgrades, rank by rank -->
+            <Border Grid.Column="4" Style="{StaticResource Pane}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel>
-                        <Grid Margin="0,0,0,8">
-                            <TextBlock Text="ENSIGNS" Style="{StaticResource Heading}" Margin="0"/>
-                            <TextBlock Text="{Binding EnsignBudget}" FontSize="13" Foreground="{StaticResource Text}" HorizontalAlignment="Right" VerticalAlignment="Bottom"/>
+                        <Grid>
+                            <TextBlock Text="Ensigns" Style="{StaticResource Heading}"/>
+                            <TextBlock Text="{Binding EnsignBudget}" FontSize="12" Foreground="{DynamicResource Brush.Foreground.Highlight}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,0,4"/>
                         </Grid>
-                        <Button Style="{StaticResource Flat}" Command="{Binding EnsignsCommand}" Background="#FF22262B" Margin="0,0,0,18">
-                            <Grid Margin="14,10">
+                        <Border Style="{StaticResource Rule}"/>
+                        <Button Style="{StaticResource Row}" Command="{Binding EnsignsCommand}" Margin="0,0,0,14">
+                            <Grid Margin="12,10">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
@@ -235,85 +329,77 @@
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border Width="48" Height="32" Margin="0,0,8,0" BorderBrush="{StaticResource Rule}" BorderThickness="1">
+                                            <Border Width="48" Height="32" Margin="0,0,8,0" BorderBrush="{DynamicResource Brush.Border.Normal}" BorderThickness="1">
                                                 <Image Source="{Binding Flag}" Stretch="Fill"/>
                                             </Border>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                                 <ItemsControl ItemsSource="{Binding EnsignPips}" Grid.Row="1" Margin="0,8,-3,0">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Background="{Binding}" Height="6" Margin="0,0,3,0"/>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                                <TextBlock Grid.Row="2" Text="{Binding EnsignSummary}" FontSize="13" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Style="{StaticResource Pip}" Margin="0,0,3,0"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock Grid.Row="2" Text="{Binding EnsignSummary}" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"/>
                             </Grid>
                         </Button>
-                        <TextBlock Text="STARTING BONUSES" Style="{StaticResource Heading}" Margin="0,0,0,2"/>
+                        <TextBlock Text="Starting bonuses" Style="{StaticResource Heading}"/>
+                        <Border Style="{StaticResource Rule}" Margin="0,0,0,8"/>
                         <TextBlock Text="Every run gets them. Each rank bought raises the price of the next."
-                                   FontSize="13" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                   FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8"/>
                         <ItemsControl ItemsSource="{Binding Bonuses}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Background="#FF22262B" Padding="14,10" Margin="0,0,0,6">
+                                    <Border Background="{DynamicResource Brush.ListBox.Background}" Padding="12,8" Margin="0,0,0,4">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
                                             <StackPanel Margin="0,0,10,0">
-                                                <TextBlock Text="{Binding Name}" FontSize="17" Foreground="{StaticResource Text}"/>
+                                                <TextBlock Text="{Binding Name}" Style="{StaticResource Name}"/>
                                                 <ItemsControl ItemsSource="{Binding Pips}" Margin="0,5,0,5">
                                                     <ItemsControl.ItemsPanel>
                                                         <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
                                                     </ItemsControl.ItemsPanel>
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate>
-                                                            <Border Background="{Binding}" Width="18" Height="6" Margin="0,0,4,0"/>
+                                                            <Border Style="{StaticResource Pip}" Width="18" Margin="0,0,4,0"/>
                                                         </DataTemplate>
                                                     </ItemsControl.ItemTemplate>
                                                 </ItemsControl>
-                                                <TextBlock Text="{Binding PerRank}" FontSize="13" Foreground="{StaticResource Muted}" TextWrapping="Wrap"/>
+                                                <TextBlock Text="{Binding PerRank}" FontSize="11" TextWrapping="Wrap"/>
                                             </StackPanel>
-                                            <Button Grid.Column="1" Style="{StaticResource Flat}" Command="{Binding Command}" VerticalAlignment="Center"
-                                                    Width="96" Height="36" BorderBrush="{StaticResource Amber}" BorderThickness="1">
-                                                <TextBlock Text="{Binding Price}" FontSize="14" Foreground="{StaticResource Amber}" HorizontalAlignment="Center"/>
-                                            </Button>
+                                            <Button Grid.Column="1" Command="{Binding Command}" Content="{Binding Price}" VerticalAlignment="Center" Width="88" Height="30"/>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <Button Style="{StaticResource Flat}" Command="{Binding RefundCommand}" HorizontalAlignment="Left" Padding="0,8" Margin="0,6,0,0">
-                            <TextBlock Text="{Binding RefundText}" FontSize="14" Foreground="{StaticResource Muted}"/>
+                        <Button Style="{DynamicResource HyperlinkButton}" Command="{Binding RefundCommand}" HorizontalAlignment="Left" Padding="0,8" Margin="0,4,0,0">
+                            <TextBlock Text="{Binding RefundText}" FontSize="12" Style="{DynamicResource HyperlinkButtonText}"/>
                         </Button>
                     </StackPanel>
                 </ScrollViewer>
-            </Grid>
-
-            <!-- Footer: BACK, what happened last, and LAUNCH -->
-            <Grid Grid.Row="2" Margin="0,20,0,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <Button Style="{StaticResource Flat}" Command="{Binding BackCommand}" Width="160" Height="52"
-                        BorderBrush="{StaticResource Rule}" BorderThickness="1">
-                    <TextBlock Text="{Binding BackText}" FontSize="20" Foreground="{StaticResource Text}" HorizontalAlignment="Center"/>
-                </Button>
-                <TextBlock Grid.Column="1" Text="{Binding Message}" FontSize="15" Foreground="{StaticResource Amber}"
-                           VerticalAlignment="Center" HorizontalAlignment="Right" Margin="24,0" TextWrapping="Wrap"/>
-                <Button Grid.Column="2" Style="{StaticResource Flat}" Command="{Binding LaunchCommand}" Width="260" Height="52"
-                        Background="#FFA4161A">
-                    <TextBlock Text="{Binding LaunchText}" FontSize="22" Foreground="#FFFFFFFF" HorizontalAlignment="Center"/>
-                </Button>
-            </Grid>
+            </Border>
         </Grid>
-    </Border>
+
+        <!-- Footer: BACK, what happened last, and LAUNCH, in the game's own buttons -->
+        <Grid Grid.Row="2" Margin="0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Button Command="{Binding BackCommand}" Content="{Binding BackText}" Width="160" Height="36" FontSize="14"/>
+            <TextBlock Grid.Column="1" Text="{Binding Message}" FontSize="12" Foreground="{DynamicResource Brush.Foreground.Emphasis}"
+                       VerticalAlignment="Center" HorizontalAlignment="Right" Margin="24,0" TextWrapping="Wrap"/>
+            <Button Grid.Column="2" Command="{Binding LaunchCommand}" Content="{Binding LaunchText}" Width="160" Height="36" FontSize="14"/>
+        </Grid>
+    </Grid>
 </Grid>

@@ -262,3 +262,17 @@ holds a `MemberwiseClone` of it.
 | Damage control | `Crew._structureRepair`, `_systemRepair`, `_floodingRepair`, `_fireSeveretyRepair`; `SetDamageControlTeamsNumbers` | **Never** call `SetCrewSkill` again: it multiplies, so the bonuses compound |
 | Engines | Edit `VP._telegraphVelocities[]` in place, and raise `_maxForwardVelocityInKnots` | `Compartments` holds the same array |
 | ESM, Jammer | Not found yet | ECM jam chance `_ep._jamChance`; how it is stored per ship is unverified |
+
+## UI theme
+
+The game's XAML can be read from its asset files: `sharedassets*.assets` and
+`globalgamemanagers.assets` hold it as length-prefixed plain text.
+`NoesisTheme.Brushes.DarkRed`, `NoesisTheme.Fonts`, `NoesisTheme.Styles`,
+`SeaPower.Theme.Custom` and `SeaPower.Resources` are the ones that matter.
+
+- **Noesis views** use `{DynamicResource Brush.*}` and the game's implicit
+  `Button`, as Dynamic Campaign Mod's runtime-parsed XAML does.
+- **IMGUI** uses the same colours, named in `Hud`. Roboto Medium and Bold exist
+  as Unity fonts in `sharedassets2`; Regular is a Noesis font only, so
+  `mod/fonts` ships it, from googlefonts/roboto v2.138 (Apache 2.0).
+- **Rarity** uses the crew skill marks and colours from `CrewSkillGlyphTemplate`.

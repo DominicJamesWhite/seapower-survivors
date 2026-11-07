@@ -19,14 +19,14 @@ namespace SeapowerSurvivors;
 /// </remarks>
 static class Rings
 {
-    static readonly Color Taken = new Color(0.68f, 0.71f, 0.74f);
+    static readonly Color Taken = Hud.Label;
     static readonly Color ToCome = new Color(1f, 1f, 1f, 0.12f);
-    static readonly Color Earned = new Color(0.86f, 0.89f, 0.91f);
+    static readonly Color Earned = Hud.Value;
     static readonly Color Faint = new Color(1f, 1f, 1f, 0.25f);
     /// <summary>Taken notches on a card, behind the ones it would fill.</summary>
     static readonly Color Behind = new Color(0.37f, 0.41f, 0.44f);
-    static readonly Color Filling = new Color(0.95f, 0.96f, 0.97f);
-    static readonly Color IconColour = new Color(0.68f, 0.71f, 0.74f);
+    static readonly Color Filling = Hud.Value;
+    static readonly Color IconColour = Hud.Label;
 
     /// <summary>Notches on an empty slot's ring.</summary>
     const int EmptyNotches = 20;
@@ -239,17 +239,17 @@ static class Rings
         if (Mathf.Approximately(s, styleScale) && slotName != null) return;
         styleScale = s;
         int Size(float px) => Mathf.Max(8, Mathf.RoundToInt(px * s));
-        slotName = Hud.Text(Size(13), Hud.Value);
-        slotSub = Hud.Text(Size(11), Hud.Label);
+        slotName = Hud.Text(Size(12), Hud.Value);
+        slotSub = Hud.Text(Size(10), Hud.Label);
         tipTitle = Hud.Text(Size(14), Hud.Value, style: FontStyle.Bold);
-        tipRank = Hud.Text(Size(14), Hud.Label);
+        tipRank = Hud.Text(Size(12), Hud.Label);
         tipRight = Hud.Text(Size(12), Hud.Label, TextAnchor.MiddleRight);
         tipLabel = Hud.Text(Size(11), Hud.Label, TextAnchor.UpperLeft);
-        tipText = Hud.Text(Size(13), new Color(0.76f, 0.79f, 0.82f), TextAnchor.UpperLeft);
-        tipBold = Hud.Text(Size(13), Hud.Value, TextAnchor.UpperLeft, FontStyle.Bold);
-        tipNext = Hud.Text(Size(13), Hud.Value, TextAnchor.UpperLeft);
-        tipNum = Hud.Text(Size(13), Hud.Label, TextAnchor.UpperRight);
-        tipNumNext = Hud.Text(Size(13), Hud.Accent, TextAnchor.UpperRight);
+        tipText = Hud.Text(Size(12), Hud.Label, TextAnchor.UpperLeft);
+        tipBold = Hud.Text(Size(12), Hud.Value, TextAnchor.UpperLeft, FontStyle.Bold);
+        tipNext = Hud.Text(Size(12), Hud.Value, TextAnchor.UpperLeft);
+        tipNum = Hud.Text(Size(12), Hud.Label, TextAnchor.UpperRight);
+        tipNumNext = Hud.Text(Size(12), Hud.Accent, TextAnchor.UpperRight);
         foreach (var style in new[] { tipText, tipBold, tipNext, tipLabel }) style.wordWrap = true;
         foreach (var style in new[] { slotName, slotSub }) style.clipping = TextClipping.Clip;
     }
@@ -281,11 +281,10 @@ static class Rings
         {
             var line = slots[i];
             var box = new Rect(row.x + i * (width + gap), row.y, width, row.height);
-            Hud.Box(box);
             bool hover = line != null && box.Contains(Event.current.mousePosition);
+            Hud.Box(box, hover ? Hud.Control : Hud.Panel);
             if (hover)
             {
-                Hud.Fill(box, new Color(1f, 1f, 1f, 0.06f));
                 hovered = line;
                 hoveredBox = box;
             }
@@ -341,7 +340,7 @@ static class Rings
         float labelHeight = tipLabel.CalcSize(new GUIContent("A")).y + 2f * s;
         float height = pad + headerHeight + 8f * s + labelHeight + Mathf.Max(Height(left), Height(right)) + pad;
         var panel = new Rect(at.x, at.y, at.width, height);
-        Hud.Box(panel);
+        Hud.Box(panel, Hud.Dark);
 
         float x = panel.x + pad, y = panel.y + pad;
         string title = line.Name;
