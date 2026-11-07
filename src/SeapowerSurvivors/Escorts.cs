@@ -52,6 +52,8 @@ static class Escorts
     const int Offers = 3;
     /// <summary>Joining ships appear this far from the flagship, abeam of it.</summary>
     const float JoinDistanceNm = 1.5f;
+    /// <summary>How much farther out each further copy of a ship joins, so copies do not sit on top of one another.</summary>
+    const float CopySpacingNm = 0.75f;
     /// <summary>Game time between air resupplies once the Air wing line has it, before its ranks shorten it.</summary>
     internal const float ResupplySeconds = 240f;
 
@@ -134,7 +136,7 @@ static class Escorts
     /// </summary>
     internal static List<Escort> Offer(Run run, int tier, ICollection<Escort> shown = null)
     {
-        var pool = LevelUpScreen.Shuffled(NavyOf(run.Ship._obp._objectIniName).Where(e => e.Tier == tier), shown).ToList();
+        var pool = LevelUpScreen.Shuffled(NavyOf(run.Ship._obp._objectIniName).Where(e => e.Tier == tier).Select(WithEnsigns).Where(e => e != null), shown).ToList();
         var missing = Role.Sams | Role.Guns | Role.AntiShip | Role.Ciws | Role.AirCover | Role.Awacs | Role.AirStrike;
         missing &= ~FleetRoles(run);
         var offer = new List<Escort>();
@@ -142,6 +144,42 @@ static class Escorts
         if (filler != null) offer.Add(filler);
         offer.AddRange(pool.Where(e => e != filler).Take(Offers - offer.Count));
         return offer;
+    }
+
+    /// <summary>The Argentine ensign's strike flights, by aircraft: the same aircraft and number, on its own unguided loadout. Tu-22M2s have none.</summary>
+    static readonly Dictionary<string, (string loadout, string weapon)> BombLoadouts = new Dictionary<string, (string, string)>
+    {
+        ["usn_a-6e"] = ("Strike", "Mk 83 bombs"),
+        ["usn_fa-18a"] = ("Strike", "Mk 83 bombs"),
+        ["wp_su-24a"] = ("Strike", "FAB-250 bombs"),
+        ["wp_su-24m"] = ("Strike", "FAB-250 bombs"),
+    };
+
+    /// <summary>The same object each time, as a reroll leans away from cards by identity.</summary>
+    static readonly Dictionary<Escort, Escort> bombVersions = new Dictionary<Escort, Escort>();
+
+    /// <summary>
+    /// What a chest offers in place of this escort under the ensigns flown: itself,
+    /// a bomb-armed version, or null if it cannot be offered. A-7Es and Yak-38s
+    /// already carry only iron bombs, and every other flight here is not for strike.
+    /// </summary>
+    static Escort WithEnsigns(Escort escort)
+    {
+        if (!Ensigns.Active(Ensigns.IronBombs) || (escort.Roles & Role.AirStrike) == 0 || escort.Type == "usn_a-7e" || escort.Type == "wp_yak-38") return escort;
+        if (!BombLoadouts.TryGetValue(escort.Type, out var bombs)) return null;
+        if (!bombVersions.TryGetValue(escort, out var version))
+        {
+            string name = escort.Name.Replace("Harpoon", "strike") + ", " + bombs.weapon;
+            bombVersions[escort] = version = Escort.Flight(name, escort.Type, escort.Tier, escort.Roles, bombs.loadout, escort.Count, escort.AltitudeFt);
+        }
+        return version;
+    }
+
+    /// <summary>A ship or flight taken from a chest: twice over, under the New Zealand ensign.</summary>
+    internal static void JoinFromChest(Run run, Escort escort)
+    {
+        int copies = run.Hoisted.Contains(Ensigns.ChestsTwice) ? Ensigns.ChestCopies : 1;
+        for (int i = 0; i < copies; i++) Join(run, escort, i);
     }
 
     /// <summary>What a card says the ship would add.</summary>
@@ -156,19 +194,20 @@ static class Escorts
             .Replace("AirCover", "air cover").Replace("Awacs", "AWACS").Replace("AirStrike", "air strike");
 
     /// <summary>Spawn the ship or flight beside the flagship, under the player's command, with every upgrade the run has taken.</summary>
-    internal static void Join(Run run, Escort escort)
+    /// <param name="copy">Which of several joining together this is, so each has its own water.</param>
+    internal static void Join(Run run, Escort escort, int copy = 0)
     {
         // The Greek ensign: the first escort taken comes as five, and is the last.
         if (run.Hoisted.Contains(Ensigns.FiveOfAKind) && !run.EscortChosen)
         {
             run.EscortChosen = true;
             run.ShipChests.Clear();
-            for (int i = 0; i < Ensigns.EscortCopies; i++) Join(run, escort);
+            for (int i = 0; i < Ensigns.EscortCopies; i++) Join(run, escort, i);
             return;
         }
         if (escort.IsAir)
         {
-            JoinFlight(run, escort);
+            JoinFlight(run, escort, copy);
             return;
         }
         var flagship = run.Ship;
@@ -176,7 +215,7 @@ static class Escorts
         float course = flagship.transform.eulerAngles.y;
         float side = UnityEngine.Random.value < 0.5f ? 90f : -90f;
         var spots = new[] { course + side, course - side, course + 180f }
-            .Select(b => Spawner.Offset(flagship._geoPosition, JoinDistanceNm, (b + 360f) % 360f)).ToList();
+            .Select(b => Spawner.Offset(flagship._geoPosition, JoinDistanceNm + copy * CopySpacingNm, (b + 360f) % 360f)).ToList();
         var at = spots.Where(Sea.IsWater).DefaultIfEmpty(spots[2]).First();
         var ship = Spawner.Ship(escort.Type, at, flagship.transform.eulerAngles.y, Globals._playerTaskforce, Launcher.FitOf(escort.Type) ?? "default");
         if (ship == null)
@@ -191,7 +230,7 @@ static class Escorts
         TestPanel.Report($"{escort.Name} {ship.Name.Value} joins the fleet");
     }
 
-    static void JoinFlight(Run run, Escort escort)
+    static void JoinFlight(Run run, Escort escort, int copy)
     {
         var flagship = run.Ship;
         float heading = flagship.transform.eulerAngles.y;
@@ -199,7 +238,7 @@ static class Escorts
         for (int i = 0; i < escort.Count; i++)
         {
             // Abreast, a mile apart, off the flagship's starboard beam.
-            var at = Spawner.Offset(flagship._geoPosition, JoinDistanceNm + i, (heading + 90f) % 360f);
+            var at = Spawner.Offset(flagship._geoPosition, JoinDistanceNm + i + copy * escort.Count, (heading + 90f) % 360f);
             var aircraft = Spawner.Aircraft(escort.Type, "Squadron1", escort.Loadout, at, escort.AltitudeFt, heading, Globals._playerTaskforce);
             if (aircraft == null) continue;
             aircraft._unlimitedFuel = true;

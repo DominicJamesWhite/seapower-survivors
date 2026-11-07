@@ -123,11 +123,14 @@ public class Director : MonoBehaviour
         // The Greek ensign's five have already sailed, or are being flown on now.
         if (Launcher.IsLaunchedMission() && Launcher.Current.Ships.Count + Launcher.Current.Flights.Count > 0) Run.Current.EscortChosen = true;
         if (Launcher.IsLaunchedMission())
+        {
+            int copy = 0;
             foreach (var flight in EnsignCombat.StartingFlights(Run.Current, Launcher.Current))
             {
-                try { Escorts.Join(Run.Current, flight); }
+                try { Escorts.Join(Run.Current, flight, copy++); }
                 catch (Exception e) { Entry.Log.LogError($"Starting flight {flight.Name} failed to join: {e}"); }
             }
+        }
         phase = Phase.Running;
         runStart = lastTick = lastSteer = Now;
         plan = Threats.For(Run.Current.FlagshipType);
@@ -642,8 +645,6 @@ public class Director : MonoBehaviour
 
     void SpawnOnBearing(Group group, string[] types, ObjectBase player, List<ObjectBase> into, float? onBearing, List<float> wave = null, bool armed = true)
     {
-        // The Australian ensign's price: every raid comes twice over.
-        if (group.Domain == Domain.Air && Ensigns.Active(Ensigns.DoubleAir)) types = types.Concat(types).ToArray();
         float distance = UnityEngine.Random.Range(group.MinNm, group.MaxNm);
         float bearing = onBearing ?? (group.Domain == Domain.Surface
             ? Sea.ShipBearing(player._geoPosition, ref distance, wave, Script.WaveSpreadDeg)

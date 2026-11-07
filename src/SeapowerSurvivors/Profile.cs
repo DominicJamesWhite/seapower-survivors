@@ -80,9 +80,20 @@ sealed class Profile
         if (leaveAshore ? ashore.Add(id) : ashore.Remove(id)) Save();
     }
 
-    /// <summary>The ensigns the next run flies: only ones still owned, and never more than the limit.</summary>
-    internal List<Ensign> HoistedEnsigns() =>
-        hoisted.Select(Ensigns.ById).Where(e => e != null && Owns(Store.EnsignId(e))).Take(Ensigns.MaxHoisted).ToList();
+    /// <summary>The ensigns the next run flies: only ones still owned, that suit the flagship and each other, in the order hoisted while the budget lasts.</summary>
+    internal List<Ensign> HoistedEnsigns()
+    {
+        var flagship = Setup.Flagship(this).Type;
+        var flying = new List<Ensign>();
+        int points = 0;
+        foreach (var ensign in hoisted.Select(Ensigns.ById))
+        {
+            if (ensign == null || !Owns(Store.EnsignId(ensign)) || !Ensigns.Fits(ensign, flagship) || Ensigns.ClashWith(ensign, flying) != null || points + ensign.Points > Ensigns.Budget) continue;
+            flying.Add(ensign);
+            points += ensign.Points;
+        }
+        return flying;
+    }
 
     internal void Hoist(Ensign ensign)
     {

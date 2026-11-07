@@ -117,6 +117,7 @@ sealed class Pressure
             if (Now - lastWarning >= SalvoSeconds)
             {
                 closeCalls++;
+                run.CloseCalls++;
                 Entry.Log.LogInfo($"Close call: enemy missile {closest:F1} nm from the fleet, pressure {Mathf.Max(0f, value - CloseCallPenalty):F2}");
             }
             Warn(CloseCallPenalty);

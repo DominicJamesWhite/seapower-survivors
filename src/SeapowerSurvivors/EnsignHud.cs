@@ -4,14 +4,14 @@ namespace SeapowerSurvivors;
 
 /// <summary>
 /// The ensigns flown, as small flags at the end of the status panel. Hovering
-/// one opens a quiet panel under the slot row saying what it does and costs.
+/// one opens a quiet panel under the slot row saying what it does.
 /// </summary>
 static class EnsignHud
 {
     const float FlagWidth = 33f, FlagHeight = 22f, Gap = 6f, PanelWidth = 340f;
 
     static float styleScale;
-    static GUIStyle title, navy, boon, cost;
+    static GUIStyle title, navy, boon, tally, tallyCount;
 
     static void Styles(float s)
     {
@@ -21,8 +21,9 @@ static class EnsignHud
         title = Hud.Text(Size(14), Hud.Value, TextAnchor.UpperLeft, FontStyle.Bold);
         navy = Hud.Text(Size(11), Hud.Label, TextAnchor.UpperLeft);
         boon = Hud.Text(Size(13), Hud.Value, TextAnchor.UpperLeft);
-        cost = Hud.Text(Size(13), Hud.Label, TextAnchor.UpperLeft);
-        boon.wordWrap = cost.wordWrap = true;
+        tally = Hud.Text(Size(13), Hud.Label, TextAnchor.UpperLeft);
+        tallyCount = Hud.Text(Size(10), Hud.Value, TextAnchor.MiddleCenter);
+        boon.wordWrap = true;
     }
 
     internal static float Width(Run run, float s) =>
@@ -40,19 +41,27 @@ static class EnsignHud
         {
             var flag = new Rect(area.x + i * (w + gap), area.center.y - h / 2f, w, h);
             GUI.DrawTexture(flag, EnsignFlags.Texture(run.Hoisted[i]), ScaleMode.StretchToFill, true);
+            if (Ensigns.Tally(run, run.Hoisted[i]) is var counted && counted.HasValue)
+            {
+                var corner = new Rect(flag.xMax - 13f * s, flag.yMax - 11f * s, 13f * s, 11f * s);
+                Hud.Fill(corner, new Color(0f, 0f, 0f, 0.7f));
+                GUI.Label(corner, counted.Value.count, tallyCount);
+            }
             if (!flag.Contains(Event.current.mousePosition)) continue;
             hovered = run.Hoisted[i];
             hoveredFlag = flag;
         }
-        if (hovered != null) DrawPanel(hovered, hoveredFlag, under, s);
+        if (hovered != null) DrawPanel(run, hovered, hoveredFlag, under, s);
     }
 
-    static void DrawPanel(Ensign ensign, Rect flag, Rect under, float s)
+    static void DrawPanel(Run run, Ensign ensign, Rect flag, Rect under, float s)
     {
         float pad = 12f * s, width = PanelWidth * s, inner = width - 2f * pad;
         float titleHeight = title.CalcSize(new GUIContent("A")).y, navyHeight = navy.CalcSize(new GUIContent("A")).y;
-        float boonHeight = boon.CalcHeight(new GUIContent(ensign.Boon), inner), costHeight = cost.CalcHeight(new GUIContent(ensign.Cost), inner);
-        float height = pad + titleHeight + navyHeight + 8f * s + boonHeight + 4f * s + costHeight + pad;
+        float boonHeight = boon.CalcHeight(new GUIContent(ensign.Boon), inner);
+        var counted = Ensigns.Tally(run, ensign);
+        float tallyHeight = counted.HasValue ? 4f * s + tally.CalcSize(new GUIContent("A")).y : 0f;
+        float height = pad + titleHeight + navyHeight + 8f * s + boonHeight + tallyHeight + pad;
         float x = Mathf.Clamp(flag.center.x - width / 2f, 4f, Screen.width - width - 4f);
         var panel = new Rect(x, under.yMax + 4f * s, width, height);
         Hud.Box(panel);
@@ -62,7 +71,6 @@ static class EnsignHud
         GUI.Label(new Rect(panel.x + pad, y, inner, navyHeight), ensign.Navy, navy);
         y += navyHeight + 8f * s;
         GUI.Label(new Rect(panel.x + pad, y, inner, boonHeight), ensign.Boon, boon);
-        y += boonHeight + 4f * s;
-        GUI.Label(new Rect(panel.x + pad, y, inner, costHeight), ensign.Cost, cost);
+        if (counted.HasValue) GUI.Label(new Rect(panel.x + pad, y + boonHeight + 4f * s, inner, tallyHeight), counted.Value.line, tally);
     }
 }

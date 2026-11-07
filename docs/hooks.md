@@ -193,16 +193,15 @@ through `Boosts.Apply`; what acts during the fight is in `EnsignCombat`.
 - **Damage.** `Blastzone.GetWeaponDamage` postfix covers warheads on ships and
   aircraft. Shells on aircraft go through `CiwsBallistics.VariedHitDamage`, flagged
   by a `Projectile.ProcessCollision` prefix, as Critical hits does.
-- **No harm.** An `OnHitUnit` prefix returning false records no impact, so
+- **Ignored hits.** An `OnHitUnit` prefix returning false records no impact, so
   `CheckForInstakill` has nothing to drain from the hidden pool either.
-- **Gas.** The `Blastzone(Projectile, Vector3)` constructor gives where a shell
-  came down. Clouds drain `_limitIntegrity` directly, then sink the ship the way
-  `CheckForInstakill` does, by setting `_delayedSinkTime`.
+- **Bomb accuracy.** A bomb's aim error comes from the aircraft's `_bombingAccuracy`
+  and `_bombingMovingTargetPenalty` (`Bomb.GetAimErrorSigma`), and its scatter from
+  the round's `_circularErrorRadius` (`Bomb.GetBallisticScatterSigma`).
+- **Salvos.** `AI.AutoAttackSalvoSize` is 1 for an anti-ship missile, so a postfix
+  doubling it makes two a launch.
 - **EMP.** A `CreateExplosion` prefix replaces the mortar round's blast. Radars get
   `Inoperable`, and the ship is held on weapons hold; `Spawner.Alert` skips it.
-- **Ship speed.** `VP._maxForwardVelocityInKnots` and `VP._telegraphVelocities`,
-  which `Compartments` holds by reference. Ship parameters are per ship
-  (`VesselLoader` makes a new one).
 - **CIWS reach.** Round range, then `_maxRangeSq` and `_sigmaFcsMissileMrad` set to
   −1 so it recalculates and refits its hit model. Tracer life is capped at 8 s.
 - **Wire.** `_midCourseCorrection`, `_wireBreakSpeedInKnots`, `_maxWireCount`;

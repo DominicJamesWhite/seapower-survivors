@@ -237,8 +237,9 @@ sealed class SetPieces
         }
         int levels = UnityEngine.Random.value < Balance.BigChestChance ? 3 : 1;
         run.PendingLevels += levels;
-        run.ShipChests.Enqueue(chestTier);
-        TestPanel.Report($"{def.Name}: {piece.CapitalName ?? "capital ship"} sunk: chest of a ship and {levels} level-up{(levels > 1 ? "s" : "")}");
+        bool ship = !Ensigns.EscortsClosed(run);
+        if (ship) run.ShipChests.Enqueue(chestTier);
+        TestPanel.Report($"{def.Name}: {piece.CapitalName ?? "capital ship"} sunk: chest of {(ship ? "a ship and " : "")}{levels} level-up{(levels > 1 ? "s" : "")}");
     }
 
     static GeoPosition Centre(Active piece)

@@ -179,44 +179,57 @@ to re-measure.
 ## Ensigns
 
 After Soulstone Survivors' runes: a choice made before a run that changes how
-the whole run plays. Each is a real naval ensign with one boost and one
-drawback. Up to three fly at once, and each is unlocked once with banked XP
-(400 to 1,200, first guesses; a full run banks about 2,000).
+the whole run plays. Each is a real naval ensign with one effect and no penalty.
+A run flies any mix up to a budget of **20 points**, and each is unlocked once with
+banked XP (400 to 1,200, first guesses; a full run banks about 2,000). Some replace
+one thing with another, such as SAMs with CIWS: that is the effect, not a price.
 
 Chosen on the Survivors screen: the Ensigns panel at the top of the right-hand
 column opens a page of all twenty, which shows what each does without hovering.
 Clicking one unlocks, hoists or strikes it. During a run they are small flags at
 the end of the status panel; hovering one shows what it does.
 
-| Ensign | Boost | Drawback |
+| Ensign | Effect | Points |
 | --- | --- | --- |
-| White Ensign | Guns, missiles, torpedoes and mortars reach ×5 | They do 25% less damage |
-| Stars and Stripes | Guns +150% damage (net +25% damage per second) | Guns fire 50% slower |
-| Chilean Ensign | Guns reach ×3; shells leave a 90 s gas cloud that stacks | Shells do no direct damage to ships |
-| Polish Naval Ensign | Guns under 100 mm: aiming error ÷4 | Those guns −25% damage |
-| Soviet Naval Ensign | All missiles ×2 damage | All missiles 30% slower |
-| Dutch Tricolour | CIWS range ×100 | SAMs and air-to-air missiles disabled |
-| St Andrew's Flag | Mortars are EMPs: radars and fire control dark for 60 s within 2 nm | Mortars do no damage; Soviet hulls only |
-| Italian Naval Ensign | Torpedoes ×2 speed, turn and range; can target ships | −25% damage |
-| Swedish Naval Ensign | Torpedoes wire-guided for half their range; can target ships | Two-thirds speed on the wire |
-| German Naval Ensign | Ships with tubes carry the EA-6B's ALQ-99 jammer, aimed by the player; torpedo cards become jammer cards | No torpedoes |
-| Australian White Ensign | Starting flights double, or a free fighter pair | Enemy aircraft double |
-| Estonian Naval Ensign | Own aircraft RCS −95% | Own aircraft 50% slower |
-| Argentine Ensign | Unguided bombs ×10; a free strike pair | Flights never refit |
-| Greek Ensign | First ship or flight comes as five | No other escorts; chests hold only level-ups |
-| Brazilian Ensign | Missiles do the fleet no harm; ships ×2 speed and turn | Everything else hits ×2 as hard |
-| Dannebrog | Once the flagship is hit, damage +200% | Until then, damage −25% |
-| Finnish Naval Ensign | Enemy ships half speed | Enemy ships ×2 damage |
-| Norwegian Ensign | Cards at least Rare | Enemy missiles ×2 speed, ×1.5 reach |
-| Irish Tricolour | Cards at least Rare | Only two cards to choose from |
-| Spanish Ensign | Four free cards at the start | Crews react and aim 1.5× as badly |
+| White Ensign | Guns, missiles, torpedoes and mortars reach ×3 | 8 |
+| Stars and Stripes | Guns +300% damage, firing half as fast (net ×2 damage per second) | 5 |
+| Icelandic Coast Guard Ensign | Guns do up to ×3 damage to ships, falling evenly to ×1 at the gun's greatest range | 5 |
+| Soviet Naval Ensign | All missiles ×2 damage | 7 |
+| Indian Naval Ensign | Anti-ship salvos twice the size: the AI's usual one missile a launch becomes two | 5 |
+| Dutch Tricolour | CIWS range ×100; guns aim 4× as well and fire and reload 2× as fast; SAMs and air-to-air missiles disabled | 8 |
+| St Andrew's Flag | Mortars are EMPs: radars and fire control go dark, 2 nm and 60 s at rank 0, up to 6 nm and 3 min at rank 20; Sovremenny, Slava, Kirov and Kiev only | 5 |
+| Italian Naval Ensign | Torpedoes ×3 speed, turn and range, ×1.5 damage; can target ships | 5 |
+| Swedish Naval Ensign | Torpedoes wire-guided for half their range at full speed; can target ships | 3 |
+| German Naval Ensign | Ships with tubes carry the EA-6B's ALQ-99 jammer, aimed by the player; torpedo cards become jammer cards | 6 |
+| Australian White Ensign | Starting flights double, or a free fighter pair | 4 |
+| Estonian Naval Ensign | Own aircraft RCS −95% | 3 |
+| Argentine Ensign | Unguided bombs ×10 damage and 10× closer; strike aircraft carry only those, at RCS ×0.25; a free strike pair | 6 |
+| Greek Ensign | First ship or flight comes as five, and is the only escort; chests then hold only level-ups | 7 |
+| New Zealand White Ensign | Each ship or flight from a chest comes as two | 6 |
+| Turkish Naval Ensign | The flagship ignores one missile, bomb or torpedo, and one more every 5 levels; shells do not spend a charge, and a near miss that would harm it does | 7 |
+| Dannebrog | Each close call adds 10% to all damage for the rest of the run | 4 |
+| Norwegian Ensign | Cards at least Rare | 10 |
+| Irish Tricolour | A fourth card at every level-up, +3 rerolls, +3 banishes | 5 |
+| Spanish Ensign | Four free cards at the start | 4 |
 
-- The two card ensigns together make Epic the lowest rarity.
 - These pairs cannot fly together, because one removes what the other acts on:
-  German with Italian or Swedish, Greek with Australian or Argentine.
+  German with Italian or Swedish, Greek with Australian, Argentine or New Zealand,
+  Dutch with Australian.
+- Under the Dutch ensign a launcher that also holds other rounds stays in action
+  and only its SAMs are withheld, so a Perry keeps its Harpoons.
+- Mortars come under the mod's fire control from the start under the St Andrew's
+  flag, at their stock reach until range cards extend it.
+- Turkish charges and the Dannebrog's close calls show as a count on the flag.
 - Damage factors are applied where a warhead's damage is worked out, not written
   into the rounds, so card previews do not show them.
 - The numbers above are first guesses and none has been played.
+- Under the St Andrew's flag, mortar cards show the pulse each rank brings and
+  drop the damage rank's text, as there is no warhead to improve. Range ranks
+  work as usual.
+- Under the Argentine ensign, chests offer A-6Es, Hornets and Su-24s on their
+  own bomb loadouts and do not offer Tu-22M2s, which have none. Air wing refit
+  ranks say that flights keep their bombs. A Kiev's deck aircraft are the player's
+  to load, so they can still carry guided weapons.
 - The Jammers line replaces Torpedoes under the German ensign, 20 ranks: reach
   30 to 135 nm, arc 30° to 270°, jam chance 0.45 to 1.35. Its abilities are High
   power (200 kW), Second look (a resisting missile is retried every 10 s), Hard

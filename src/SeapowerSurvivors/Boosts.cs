@@ -123,7 +123,7 @@ static class Boosts
         float samKill = Upgrades.Total(run, Upgrades.Sams, Stat.KillChance);
         int samChannels = (int)Upgrades.Total(run, Upgrades.Sams, Stat.Channels);
         bool seaSkimmers = Upgrades.Has(run, Upgrades.SeaSkimmerKillers);
-        float samSpeed = (Upgrades.Has(run, Upgrades.Hypersonic) ? HypersonicFactor : 1f) * Ensigns.MissileSpeed;
+        float samSpeed = Upgrades.Has(run, Upgrades.Hypersonic) ? HypersonicFactor : 1f;
         float samRange = (Upgrades.Has(run, Upgrades.LongReach) ? LongReachFactor : 1f) * Ensigns.MissileReach;
         foreach (var director in SamDirectors(ship))
         {
@@ -151,11 +151,16 @@ static class Boosts
 
         // Air wing: bombs and rockets. Missiles on the pylons go through the lines above.
         float strikeDamage = Upgrades.Total(run, Upgrades.AirWing, Stat.Damage);
+        bool ironBombs = Ensigns.Active(Ensigns.IronBombs);
         foreach (var ap in PylonAmmo(ship).Where(StrikeStore))
+        {
             ap._warheadPower = Base(ap, "power", ap._warheadPower) * strikeDamage;
+            if (ap._type == Ammunition.Type.Bomb && ap._guidanceType == AmmunitionParameters.GuidanceType.None)
+                ap._circularErrorRadius = Base(ap, "scatter", ap._circularErrorRadius) * (ironBombs ? Ensigns.IronBombScatter : 1f);
+        }
 
         float asmDamage = Upgrades.Total(run, Upgrades.AntiShip, Stat.Damage);
-        float asmSpeed = Upgrades.Total(run, Upgrades.AntiShip, Stat.Speed) * Ensigns.MissileSpeed;
+        float asmSpeed = Upgrades.Total(run, Upgrades.AntiShip, Stat.Speed);
         float asmRange = Upgrades.Total(run, Upgrades.AntiShip, Stat.Range) * Ensigns.MissileReach;
         float asmEvasion = Upgrades.Total(run, Upgrades.AntiShip, Stat.Evasion);
         bool smartSeekers = Upgrades.Has(run, Upgrades.SmartSeekers);
@@ -339,7 +344,7 @@ static class Boosts
         var crew = ship._crew;
         if (crew != null)
         {
-            float reaction = ReactionFactor(run) * Ensigns.CrewFactor;
+            float reaction = ReactionFactor(run);
             crew._newContactProcessTime = Base(crew, "contact", crew._newContactProcessTime) * reaction;
             crew._endAlignmentDelay = Base(crew, "align", crew._endAlignmentDelay) * reaction;
             crew._autoEngageCheckMultiplier = Base(crew, "engageCheck", crew._autoEngageCheckMultiplier) * reaction;
@@ -348,17 +353,15 @@ static class Boosts
 
             crew._fcSolutionRateMultiplier = Base(crew, "fcRate", crew._fcSolutionRateMultiplier) / reaction;
 
-            float accuracy = AimErrorFactor(run) * Ensigns.CrewFactor;
+            float accuracy = AimErrorFactor(run);
             crew._fcErrorMultiplier = Base(crew, "fcError", crew._fcErrorMultiplier) * accuracy;
         }
 
-        if (ship is Vessel vessel) ApplyVesselSpeed(vessel, Ensigns.FleetSpeed);
-        if (ship is Aircraft aircraft) ApplyAirWing(aircraft);
+        if (ship is Aircraft aircraft) ApplyAirWing(run, aircraft);
     }
 
     static readonly AccessTools.FieldRef<WeaponSystemCIWS, float> CiwsRangeSquared = AccessTools.FieldRefAccess<WeaponSystemCIWS, float>("_maxRangeSq");
-    const float StallMargin = 1.2f, SlowAircraftFactor = 0.5f, StealthRcsFactor = 0.05f;
-    const float EnemyMissileSpeed = 2f, EnemyMissileReach = 1.5f, EnemyShipSpeed = 0.5f;
+    const float StealthRcsFactor = 0.05f;
     /// <summary>More than any torpedo launcher's own wires.</summary>
     const int ManyWires = 8;
     /// <summary>A speed no launching ship reaches, so steering at flank never breaks the wire.</summary>
@@ -383,76 +386,39 @@ static class Boosts
     }
 
     /// <summary>
-    /// The Swedish ensign: the torpedo is steered down a wire, and held to
-    /// two-thirds speed while on it. The ship gets enough wires that one is
-    /// always free, and a wire no longer breaks at the ship's own speed.
+    /// The Swedish ensign: the torpedo is steered down a wire at its full speed.
+    /// The ship gets enough wires that one is always free, and a wire no longer
+    /// breaks at the ship's own speed.
     /// EnsignCombat cuts it at half the range.
     /// </summary>
     static void ApplyWire(ObjectBase ship, AmmunitionParameters ap)
     {
         ap._midCourseCorrection = AmmunitionParameters.MidCourseCorrection.WireGuided;
         ap._wireBreakSpeedInKnots = NoWireBreakKnots;
-        ap._maxSpeedOnWireInKnots = ap._maxVelocityInKnots * Ensigns.WireSpeedFraction;
+        ap._maxSpeedOnWireInKnots = ap._maxVelocityInKnots;
         ship._maxWireCount = Mathf.Max(ship._maxWireCount, ManyWires);
     }
 
     /// <summary>
-    /// A ship's top speed and how hard it turns. The speed limit is read from the
-    /// telegraph table, and the top speed also sets how far a rudder slows it.
-    /// A ship's parameters are its own, loaded for it as it is made.
+    /// The Estonian ensign on every aircraft of the fleet, and the Argentine on
+    /// strike aircraft: a smaller signature, and for the Argentine a steadier
+    /// bomb run, on a moving ship as much as a still one.
     /// </summary>
-    static void ApplyVesselSpeed(Vessel vessel, float factor)
+    static void ApplyAirWing(Run run, Aircraft aircraft)
     {
-        var vp = vessel.VP;
-        vp._maxForwardVelocityInKnots = Base(vp, "maxForward", vp._maxForwardVelocityInKnots) * factor;
-        vp._rudderForce = Base(vp, "rudderForce", vp._rudderForce) * factor;
-        vp._rudderTurnRate = Base(vp, "rudderTurn", vp._rudderTurnRate) * factor;
-        vp._maxAccelerationFactor = Base(vp, "acceleration", vp._maxAccelerationFactor) * factor;
-        for (int i = 0; i < vp._telegraphVelocities.Length; i++)
-            vp._telegraphVelocities[i] = Base(vp, "telegraph" + i, vp._telegraphVelocities[i]) * factor;
-    }
-
-    /// <summary>The Estonian ensign. A jet held below stall falls out of the sky, so speed stops a little above it.</summary>
-    static void ApplyAirWing(Aircraft aircraft)
-    {
+        bool strike = Ensigns.Active(Ensigns.IronBombs) &&
+                      (run.AirWing.TryGetValue(aircraft, out var roles) ? (roles & Role.AirStrike) != 0 : PylonAmmo(aircraft).Any(StrikeStore));
         var data = aircraft._sensorData;
         if (data != null)
         {
-            float rcs = Ensigns.Active(Ensigns.StealthAir) ? StealthRcsFactor : 1f;
+            float rcs = (Ensigns.Active(Ensigns.StealthAir) ? StealthRcsFactor : 1f) * (strike ? Ensigns.StrikeRcsFactor : 1f);
             data._maxRCS = Base(data, "maxRcs", data._maxRCS) * rcs;
             data._minRCS = Base(data, "minRcs", data._minRCS) * rcs;
         }
         var ap = aircraft.Ap;
-        float slow = Ensigns.Active(Ensigns.StealthAir) ? SlowAircraftFactor : 1f;
-        float seaLevel = Base(ap, "maxSpeedSeaLevel", ap._maxSpeedSeaLevel);
-        float floor = Mathf.Min(seaLevel, ap._stallSpeed * StallMargin);
-        ap._maxSpeedSeaLevel = Mathf.Max(floor, seaLevel * slow);
-        ap._machLimit = Base(ap, "machLimit", ap._machLimit) * slow;
-    }
-
-    /// <summary>
-    /// What ensigns do to an enemy as it is made, before its reach and spawn
-    /// distance are worked out from its weapons, so those allow for it.
-    /// </summary>
-    internal static void ApplyEnsignsToEnemy(ObjectBase unit)
-    {
-        try
-        {
-            if (Ensigns.Active(Ensigns.RareCards))
-            {
-                var missiles = unit._obp._launcherWeapons.SelectMany(LauncherAmmo).Concat(PylonAmmo(unit))
-                    .Where(ap => ap._type == Ammunition.Type.Missile).Distinct();
-                foreach (var ap in missiles)
-                {
-                    ApplyMissileSpeed(ap, EnemyMissileSpeed, unit.IsAirUnit);
-                    ap._maxLaunchRangeInMiles = Base(ap, "rangeMiles", ap._maxLaunchRangeInMiles) * EnemyMissileReach;
-                    ap._launchRangesInUnity.y = Base(ap, "rangeUnity", ap._launchRangesInUnity.y) * EnemyMissileReach;
-                    ap._maxFlightTime = Base(ap, "flightTime", ap._maxFlightTime) * EnemyMissileReach;
-                }
-            }
-            if (unit is Vessel vessel && Ensigns.Active(Ensigns.SlowEnemies)) ApplyVesselSpeed(vessel, EnemyShipSpeed);
-        }
-        catch (Exception e) { Entry.Log.LogError($"Applying ensigns to {unit.Name.Value} failed: {e}"); }
+        float aim = strike ? Ensigns.IronBombScatter : 1f;
+        ap._bombingAccuracy = Base(ap, "bombingAccuracy", ap._bombingAccuracy) * aim;
+        ap._bombingMovingTargetPenalty = Base(ap, "bombingMoving", ap._bombingMovingTargetPenalty) * aim;
     }
 
     /// <summary>
@@ -476,7 +442,7 @@ static class Boosts
         ap._maxLaunchRangeInMiles = (Base(ap, "rangeMiles", ap._maxLaunchRangeInMiles) + reach) * factor;
         ap._launchRangesInUnity.y = (Base(ap, "rangeUnity", ap._launchRangesInUnity.y) + reach * UnityPerMile) * factor;
         float saturation = Base(ap, "saturation", ap._saturationValue);
-        ap._saturationValue = run.RankOf(Upgrades.Mortars) > 0 ? 0f : saturation;
+        ap._saturationValue = run.RankOf(Upgrades.Mortars) > 0 || Ensigns.Active(Ensigns.EmpMortars) ? 0f : saturation;
     }
 
     /// <summary>
@@ -952,7 +918,7 @@ static class Boosts
             rows = rows.Take(MaxPreviewRows - 1).Append($"and {more} more").ToList();
         }
         // After the cap, so a card full of numbers cannot push it out.
-        if (Upgrades.StatsIn(line, rank, rank + ranks).Contains(Stat.Refit))
+        if (Upgrades.StatsIn(line, rank, rank + ranks).Contains(Stat.Refit) && !Ensigns.Active(Ensigns.IronBombs))
             rows.Add("Delayed while a plane is guiding a weapon in flight");
         return rows;
     }
@@ -974,9 +940,10 @@ static class Boosts
                     case Stat.RateOfFire:
                         bool bursts = Bursts(gun);
                         float reload = bursts ? Base(gun, "burstGap", BurstGap(gun)) : Base(gun, "shellReload", ShellReload(gun));
-                        string row = $"{name}: {F(reload / now)} s → {F(reload / next)} s between {(bursts ? "bursts" : "shots")}";
+                        float rate = Ensigns.GunRate;
+                        string row = $"{name}: {F(reload / (now * rate))} s → {F(reload / (next * rate))} s between {(bursts ? "bursts" : "shots")}";
                         float rack = Base(gun, "reload", gun._vwp._magazineReloadTime);
-                        if (gun._vwp._associatedMagazine != null && rack > 0f) row += $", {F(rack / now)} s → {F(rack / next)} s to reload";
+                        if (gun._vwp._associatedMagazine != null && rack > 0f) row += $", {F(rack / (now * rate))} s → {F(rack / (next * rate))} s to reload";
                         if (ap != null)
                         {
                             float speed = Base(ap, "muzzleVelocityMs", ap._muzzleVelocityInMeterPerSecond);
@@ -1102,7 +1069,7 @@ static class Boosts
                 {
                     case Stat.Reach:
                         float range = Base(ap, "rangeMiles", ap._maxLaunchRangeInMiles);
-                        float bombardment = Upgrades.Has(run, Upgrades.Bombardment) ? BombardmentFactor : 1f;
+                        float bombardment = (Upgrades.Has(run, Upgrades.Bombardment) ? BombardmentFactor : 1f) * Ensigns.MortarReach;
                         rows.Add($"{name}: {F((range + now) * bombardment)} → {F((range + next) * bombardment)} nm");
                         break;
                     case Stat.Speed:
@@ -1113,7 +1080,7 @@ static class Boosts
                         float reload = Base(launcher, "reload", launcher._vwp._magazineReloadTime);
                         rows.Add($"{name}: {F(reload * now)} s → {F(reload * next)} s to reload");
                         break;
-                    case Stat.Damage:
+                    case Stat.Damage when !Ensigns.Active(Ensigns.EmpMortars):
                         float power = Base(ap, "power", ap._warheadPower);
                         rows.Add($"{name}: {F(power * now)} → {F(power * next)} damage a round");
                         break;
@@ -1168,6 +1135,8 @@ static class Boosts
                     break;
                 case Stat.Resupply:
                     rows.Add($"Pylons rearmed at level-ups → every {F(Escorts.ResupplySeconds / 60f)} min too");
+                    break;
+                case Stat.Refit when Ensigns.Active(Ensigns.IronBombs):
                     break;
                 case Stat.Refit:
                     int standard = Refits.Standard(run, ranks);

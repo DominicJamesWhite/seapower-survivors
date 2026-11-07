@@ -24,7 +24,6 @@ static class Spawner
         if (ship == null) return null;
 
         Place(ship, at);
-        if (side == Globals._enemyTaskforce) Boosts.ApplyEnsignsToEnemy(ship);
         ship._velocityInKnots = ship._telegraph * ship.MaxForwardSpeedInKnots / 5f;
         ship._velocityInUnity = ship._velocityInKnots * KnotsToUnity;
         return ship;
@@ -53,7 +52,6 @@ static class Spawner
         aircraft.SetFlightPhysicsModel(isStartingAirborne: true);
         Place(aircraft, at);
         aircraft.giveControl(aircraft.SpeedCommand.Value.GetDemandedSpeedInKnots(aircraft));
-        if (side == Globals._enemyTaskforce) Boosts.ApplyEnsignsToEnemy(aircraft);
         return aircraft;
     }
 

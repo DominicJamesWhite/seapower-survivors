@@ -98,19 +98,32 @@
                 </StackPanel>
             </Grid>
 
-            <!-- Choosing ensigns: every flag, what it gives and costs. Click to unlock, hoist or strike. -->
+            <!-- Choosing ensigns: every flag, what it does and takes from the budget. Click to unlock, hoist or strike. -->
             <ScrollViewer Grid.Row="1" Visibility="{Binding EnsignPage}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel>
-                    <TextBlock Text="ENSIGNS" Style="{StaticResource Heading}" Margin="0,0,0,2"/>
-                    <TextBlock Text="Fly up to three for a run. Each one gives something and takes something."
-                               FontSize="13" Foreground="{StaticResource Muted}" Margin="0,0,0,10"/>
+                    <StackPanel Width="440" HorizontalAlignment="Left" Margin="0,0,0,12">
+                        <Grid Margin="0,0,0,5">
+                            <TextBlock Text="ENSIGNS" Style="{StaticResource Heading}" Margin="0"/>
+                            <TextBlock Text="{Binding EnsignBudget}" FontSize="13" Foreground="{StaticResource Text}" HorizontalAlignment="Right" VerticalAlignment="Bottom"/>
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding EnsignPips}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{Binding}" Height="6" Margin="0,0,3,0"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
                     <ItemsControl ItemsSource="{Binding EnsignCards}" Margin="0,0,-8,0">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate><UniformGrid Columns="4"/></ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Button Style="{StaticResource Flat}" Command="{Binding Command}" Background="{Binding Fill}" Margin="0,0,8,8">
+                                <Button Style="{StaticResource Flat}" Command="{Binding Command}" Background="{Binding Fill}" Opacity="{Binding CardOpacity}" Margin="0,0,8,8">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="5"/>
@@ -129,10 +142,10 @@
                                                     <TextBlock Text="{Binding Name}" FontSize="15" Foreground="{StaticResource Text}" TextTrimming="CharacterEllipsis"/>
                                                     <TextBlock Text="{Binding Navy}" FontSize="11" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis"/>
                                                 </StackPanel>
-                                                <TextBlock Grid.Column="2" Text="{Binding State}" FontSize="13" Foreground="{Binding StateBrush}" VerticalAlignment="Top"/>
+                                                <TextBlock Grid.Column="2" Text="{Binding Points}" FontSize="15" Foreground="{StaticResource Text}" VerticalAlignment="Top"/>
                                             </Grid>
-                                            <TextBlock Text="{Binding Boon}" FontSize="13" Foreground="{StaticResource Text}" TextWrapping="Wrap" Margin="0,0,0,3"/>
-                                            <TextBlock Text="{Binding Cost}" FontSize="13" Foreground="{StaticResource Muted}" TextWrapping="Wrap"/>
+                                            <TextBlock Text="{Binding Boon}" FontSize="13" Foreground="{StaticResource Text}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                            <TextBlock Text="{Binding State}" FontSize="13" Foreground="{Binding StateBrush}" TextWrapping="Wrap"/>
                                         </StackPanel>
                                     </Grid>
                                 </Button>
@@ -205,16 +218,20 @@
                 <!-- Ensigns, then the starting bonuses: the permanent upgrades, rank by rank -->
                 <ScrollViewer Grid.Column="4" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel>
-                        <TextBlock Text="ENSIGNS" Style="{StaticResource Heading}" Margin="0,0,0,8"/>
+                        <Grid Margin="0,0,0,8">
+                            <TextBlock Text="ENSIGNS" Style="{StaticResource Heading}" Margin="0"/>
+                            <TextBlock Text="{Binding EnsignBudget}" FontSize="13" Foreground="{StaticResource Text}" HorizontalAlignment="Right" VerticalAlignment="Bottom"/>
+                        </Grid>
                         <Button Style="{StaticResource Flat}" Command="{Binding EnsignsCommand}" Background="#FF22262B" Margin="0,0,0,18">
                             <Grid Margin="14,10">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
                                 <ItemsControl ItemsSource="{Binding EnsignSlots}" HorizontalAlignment="Left">
                                     <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                        <ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
@@ -224,7 +241,17 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
-                                <TextBlock Grid.Row="1" Text="{Binding EnsignSummary}" FontSize="13" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                <ItemsControl ItemsSource="{Binding EnsignPips}" Grid.Row="1" Margin="0,8,-3,0">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{Binding}" Height="6" Margin="0,0,3,0"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                                <TextBlock Grid.Row="2" Text="{Binding EnsignSummary}" FontSize="13" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                             </Grid>
                         </Button>
                         <TextBlock Text="STARTING BONUSES" Style="{StaticResource Heading}" Margin="0,0,0,2"/>

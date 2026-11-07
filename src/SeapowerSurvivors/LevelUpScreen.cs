@@ -144,7 +144,7 @@ public class LevelUpScreen : MonoBehaviour
 
     void Pick(Run run, Escort escort)
     {
-        try { Escorts.Join(run, escort); }
+        try { Escorts.JoinFromChest(run, escort); }
         catch (System.Exception e) { Entry.Log.LogError($"Joining {escort.Type} failed: {e}"); }
         Next(run);
     }
@@ -178,7 +178,8 @@ public class LevelUpScreen : MonoBehaviour
 
         float cardWidth = CardWidth * s, cardHeight = CardHeight * s, gap = Gap * s, pad = 24f * s;
         int count = choosingShip ? ships.Count : offer.Count;
-        float cardsWidth = Choices * cardWidth + (Choices - 1) * gap;
+        int widest = Ensigns.CardCount(Choices);
+        float cardsWidth = widest * cardWidth + (widest - 1) * gap;
         float panelWidth = cardsWidth + 2f * pad;
         float banish = !choosingShip && run.Banishes > 0 ? BanishHeight * s : 0f;
         float panelHeight = pad + 56f * s + cardHeight + banish + 20f * s + ButtonHeight * s + pad;

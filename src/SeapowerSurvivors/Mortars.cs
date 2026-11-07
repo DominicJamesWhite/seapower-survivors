@@ -42,7 +42,8 @@ static class Mortars
 
     static double nextCheck, nextSpot;
 
-    static bool InLine(Run run) => run != null && run.RankOf(Upgrades.Mortars) > 0;
+    /// <summary>Mortars are under this fire control once the line is taken, or from the start under the St Andrew's flag, whose whole effect they are.</summary>
+    static bool InLine(Run run) => run != null && (run.RankOf(Upgrades.Mortars) > 0 || run.Hoisted.Contains(Ensigns.EmpMortars));
     static bool InFleet(Run run, ObjectBase o) => o != null && run.Fleet.Contains(o);
     static bool EnemyShip(ObjectBase o) =>
         o != null && !o.IsDestroyed && o is Vessel && o._taskforce == Globals._enemyTaskforce;

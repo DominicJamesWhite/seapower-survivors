@@ -113,10 +113,10 @@ static class EnsignFlags
                    Star(u, v, 0.62f, 0.45f, 0.07f, 7, 0.45f) || Star(u, v, 0.88f, 0.4f, 0.07f, 7, 0.45f) ||
                    Star(u, v, 0.82f, 0.56f, 0.04f) ? blue : White;
         },
-        [Ensigns.GasShells.Id] = (u, v) =>
+        [Ensigns.Salvos.Id] = (u, v) =>
         {
-            if (v >= 0.5f) return C(0xD52B1E);
-            if (u < 1f / 3f) return Star(u, v, 1f / 6f, 0.25f, 0.16f) ? White : C(0x0039A6);
+            if (u < 0.5f && v < 0.5f) return Bands(v * 2f, C(0xFF9933), White, C(0x138808));
+            if (Disc(u, v, 0.75f, 0.5f, 0.2f)) return Shield(u, v, 0.75f, 0.5f, 0.11f) ? Gold : C(0x000080);
             return White;
         },
         [Ensigns.FiveOfAKind.Id] = (u, v) =>
@@ -138,19 +138,19 @@ static class EnsignFlags
         },
         [Ensigns.FastTorpedoes.Id] = (u, v) =>
             Shield(u, v, 0.5f, 0.5f, 0.2f) ? (Disc(u, v, 0.5f, 0.46f, 0.08f) ? C(0x1C5FB5) : Gold) : Bands(u, C(0x008C45), White, C(0xCD212A)),
-        [Ensigns.SmallGuns.Id] = (u, v) =>
+        [Ensigns.PointBlank.Id] = (u, v) =>
         {
-            if (Cut(u, v, 0.78f)) return Clear;
-            if (Shield(u, v, 0.38f, 0.25f, 0.17f)) return Disc(u, v, 0.38f, 0.22f, 0.07f) ? White : Red;
-            return v < 0.5f ? White : C(0xDC143C);
+            if (Cut(u, v, 0.75f)) return Clear;
+            if (Cross(u, v, 0.36f, 0.05f)) return C(0xDC1E35);
+            return Cross(u, v, 0.36f, 0.1f) ? White : C(0x02529C);
         },
-        [Ensigns.Unsinkable.Id] = (u, v) =>
+        [Ensigns.HitProof.Id] = (u, v) =>
         {
-            if (Disc(u, v, 0.5f, 0.5f, 0.2f))
-                return Mathf.Abs(v - 0.5f + (u - 0.5f) * 0.25f) < 0.025f ? White : C(0x002776);
-            return Mathf.Abs(u - 0.5f) / 0.42f + Mathf.Abs(v - 0.5f) / 0.4f < 1f ? C(0xFFDF00) : C(0x009B3A);
+            var red = C(0xE30A17);
+            if (Star(u, v, 0.59f, 0.5f, 0.12f)) return White;
+            return Disc(u, v, 0.37f, 0.5f, 0.25f) && !Disc(u, v, 0.42f, 0.5f, 0.2f) ? White : red;
         },
-        [Ensigns.GreenCrews.Id] = (u, v) =>
+        [Ensigns.FreeCards.Id] = (u, v) =>
         {
             if (Shield(u, v, 0.3f, 0.5f, 0.15f)) return C(0xAA151B);
             return v < 0.25f || v > 0.75f ? C(0xAA151B) : C(0xF1BF00);
@@ -166,13 +166,13 @@ static class EnsignFlags
             if (Shield(u, v, 0.4f, 0.5f, 0.15f)) return Disc(u, v, 0.4f, 0.48f, 0.07f) ? Black : Gold;
             return Bands(v, Black, C(0xDD0000), Gold);
         },
-        [Ensigns.SlowEnemies.Id] = (u, v) =>
+        [Ensigns.ChestsTwice.Id] = (u, v) =>
         {
-            if (CutWithTongue(u, v, 0.8f)) return Clear;
-            if (Shield(u, v, 0.33f, 0.5f, 0.09f)) return Gold;
-            return Cross(u, v, 0.33f, 0.11f) ? C(0x003580) : White;
+            if (u < 0.5f && v < 0.5f) return Union(u * 2f, v * 2f);
+            return Star(u, v, 0.75f, 0.18f, 0.07f) || Star(u, v, 0.75f, 0.8f, 0.07f) ||
+                   Star(u, v, 0.63f, 0.46f, 0.07f) || Star(u, v, 0.87f, 0.4f, 0.07f) ? Red : White;
         },
-        [Ensigns.TwoCards.Id] = (u, v) => Bands(u, C(0x169B62), White, C(0xFF883E)),
+        [Ensigns.MoreChoice.Id] = (u, v) => Bands(u, C(0x169B62), White, C(0xFF883E)),
         [Ensigns.WireGuided.Id] = (u, v) =>
         {
             if (CutWithTongue(u, v, 0.8f)) return Clear;

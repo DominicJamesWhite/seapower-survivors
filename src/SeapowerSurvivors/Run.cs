@@ -51,7 +51,9 @@ sealed class Run
     /// <summary>The ensigns flown this run, fixed when it starts.</summary>
     internal readonly List<Ensign> Hoisted;
     /// <summary>The flagship has taken damage at some point this run: what the Dannebrog waits for.</summary>
-    internal bool FlagshipHit;
+    internal int CloseCalls;
+    /// <summary>Hits the flagship can still ignore, under the Turkish ensign.</summary>
+    internal int HitsToIgnore;
     /// <summary>The Greek ensign's one escort has been taken.</summary>
     internal bool EscortChosen;
 
@@ -72,7 +74,13 @@ sealed class Run
         XpFactor = 1f + Store.GrowthPerRank * profile.RankOf(Store.Growth);
         Luck = profile.RankOf(Store.Luck);
         Hoisted = profile.HoistedEnsigns();
-        if (Hoisted.Contains(Ensigns.GreenCrews)) PendingLevels = Ensigns.BonusCards;
+        if (Hoisted.Contains(Ensigns.FreeCards)) PendingLevels = Ensigns.BonusCards;
+        if (Hoisted.Contains(Ensigns.HitProof)) HitsToIgnore = 1;
+        if (Hoisted.Contains(Ensigns.MoreChoice))
+        {
+            Rerolls += Ensigns.ExtraRerolls;
+            Banishes += Ensigns.ExtraBanishes;
+        }
     }
 
     internal int RankOf(Upgrade upgrade) => ranks.TryGetValue(upgrade, out int rank) ? rank : 0;
@@ -99,6 +107,7 @@ sealed class Run
             Level++;
             PendingLevels++;
             RearmsPending++;
+            if (Level % Ensigns.LevelsPerIgnoredHit == 0 && Hoisted.Contains(Ensigns.HitProof)) HitsToIgnore++;
         }
     }
 

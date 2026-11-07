@@ -37,6 +37,8 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
     /// <summary>The three slots on the main page: a flag, or an empty frame.</summary>
     public List<EnsignSlot> EnsignSlots { get; private set; }
     public string EnsignSummary { get; private set; }
+    public string EnsignBudget { get; private set; }
+    public List<Brush> EnsignPips { get; private set; }
     public List<EnsignCard> EnsignCards { get; private set; }
     public Visibility MainPage => choosingEnsigns ? Visibility.Collapsed : Visibility.Visible;
     public Visibility EnsignPage => choosingEnsigns ? Visibility.Visible : Visibility.Collapsed;
@@ -119,13 +121,15 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
             if (profile.TryBuy(item))
             {
                 Say($"{ensign.Name} unlocked for {item.Price:N0} XP");
-                if (hoisted.Count < Ensigns.MaxHoisted && Ensigns.ClashWith(ensign, hoisted) == null) profile.Hoist(ensign);
+                if (CanFly(profile, ensign, hoisted)) profile.Hoist(ensign);
             }
         }
         else if (Ensigns.ClashWith(ensign, hoisted) is Ensign clash)
             Say($"{ensign.Name} cannot fly with {clash.Name}");
-        else if (hoisted.Count >= Ensigns.MaxHoisted)
-            Say($"Three ensigns at most: strike one to hoist {ensign.Name}");
+        else if (!Ensigns.Fits(ensign, Setup.Flagship(profile).Type))
+            Say($"{ensign.Name} does nothing on {Setup.Flagship(profile).Name}");
+        else if (Ensigns.PointsFlown(hoisted) + ensign.Points > Ensigns.Budget)
+            Say($"Not enough points for {ensign.Name} (needs {ensign.Points} / {Ensigns.Budget - Ensigns.PointsFlown(hoisted)})");
         else
         {
             profile.Hoist(ensign);
@@ -133,6 +137,10 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
         }
         Refresh();
     }
+
+    static bool CanFly(Profile profile, Ensign ensign, List<Ensign> hoisted) =>
+        Ensigns.ClashWith(ensign, hoisted) == null && Ensigns.Fits(ensign, Setup.Flagship(profile).Type) &&
+        Ensigns.PointsFlown(hoisted) + ensign.Points <= Ensigns.Budget;
 
     void Say(string message)
     {
@@ -170,8 +178,11 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
             Refresh();
         })).ToList();
         var hoisted = profile.HoistedEnsigns();
-        EnsignSlots = Enumerable.Range(0, Ensigns.MaxHoisted)
-            .Select(i => new EnsignSlot(i < hoisted.Count ? hoisted[i] : null)).ToList();
+        EnsignSlots = hoisted.Select(e => new EnsignSlot(e)).ToList();
+        int spent = Ensigns.PointsFlown(hoisted);
+        // The wording of the game's own Task Force builder.
+        EnsignBudget = $"{Ensigns.Budget - spent} available of {Ensigns.Budget} pts";
+        EnsignPips = Enumerable.Range(0, Ensigns.Budget).Select(i => i < spent ? Views.Amber : Views.Off).ToList();
         EnsignSummary = hoisted.Count == 0 ? "None flying" : string.Join(", ", hoisted.Select(e => e.Name));
         EnsignCards = Ensigns.All.Select(e => new EnsignCard(profile, e, hoisted, () => ClickEnsign(profile, e))).ToList();
 
@@ -182,7 +193,7 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
                  {
                      nameof(Bank), nameof(Earned), nameof(Areas), nameof(AreaName), nameof(AreaBlurb), nameof(AreaApproach),
                      nameof(Flagships), nameof(Escorts), nameof(FleetSummary), nameof(Bonuses), nameof(RefundText),
-                     nameof(EnsignSlots), nameof(EnsignSummary), nameof(EnsignCards),
+                     nameof(EnsignSlots), nameof(EnsignSummary), nameof(EnsignBudget), nameof(EnsignPips), nameof(EnsignCards),
                  })
             Changed(name);
     }
@@ -336,19 +347,20 @@ public sealed class EnsignSlot
     }
 }
 
-/// <summary>An ensign on the choosing page: its flag, what it gives and costs, and whether it is flying, owned or for sale.</summary>
+/// <summary>An ensign on the choosing page: its flag, what it does and takes from the budget, and whether it is flying, owned or for sale.</summary>
 public sealed class EnsignCard
 {
     public ImageSource Flag { get; }
     public string Name { get; }
     public string Navy { get; }
     public string Boon { get; }
-    public string Cost { get; }
+    public string Points { get; }
     public string State { get; }
     public Brush StateBrush { get; }
     public Brush Bar { get; }
     public Brush Fill { get; }
     public double FlagOpacity { get; }
+    public double CardOpacity { get; }
     public ICommand Command { get; }
 
     internal EnsignCard(Profile profile, Ensign ensign, List<Ensign> hoisted, Action click)
@@ -358,8 +370,18 @@ public sealed class EnsignCard
         Name = ensign.Name;
         Navy = ensign.Navy;
         Boon = ensign.Boon;
-        Cost = ensign.Cost;
-        State = flying ? "Flying" : owned ? "Owned" : $"{ensign.Price:N0} XP";
+        Points = $"{ensign.Points} pts";
+        var flagship = Setup.Flagship(profile);
+        int available = Ensigns.Budget - Ensigns.PointsFlown(hoisted);
+        var clash = Ensigns.ClashWith(ensign, hoisted);
+        bool fits = Ensigns.Fits(ensign, flagship.Type), enough = ensign.Points <= available;
+        State = flying ? "Flying"
+            : !owned ? $"Unlock: {ensign.Price:N0} XP"
+            : clash != null ? $"Cannot fly with {clash.Name}"
+            : !fits ? $"Not on {flagship.Name}"
+            : !enough ? $"Not enough points (needs {ensign.Points} / {available})"
+            : "Owned";
+        CardOpacity = flying || (clash == null && fits && enough) ? 1.0 : 0.6;
         StateBrush = flying ? Views.Amber : Views.Muted;
         Bar = flying ? Views.Amber : Views.Off;
         Fill = flying ? Views.ChosenRow : Views.Row;

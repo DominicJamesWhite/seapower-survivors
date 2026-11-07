@@ -8,20 +8,16 @@ namespace SeapowerSurvivors;
 
 /// <summary>
 /// What ensigns do during the fight, rather than to a weapon's numbers (Boosts
-/// writes those): damage by who fired and at whom, corrosive gas, EMP mortars,
+/// writes those): damage by who fired and at whom, ignored hits, EMP mortars,
 /// wires, and the things an ensign keeps out of action.
 /// </summary>
 static class EnsignCombat
 {
-    const float SmallGunDamage = 0.75f, LongRangeDamage = 0.75f, TorpedoDamage = 0.75f;
-    const float HeavyGunDamage = 2.5f, HeavyMissileDamage = 2f, BombDamage = 10f;
-    const float LastStandHit = 3f, LastStandUnhit = 0.75f;
-    const float EnemyShipDamage = 2f, UnsinkableOtherDamage = 2f;
+    const float HeavyGunDamage = 4f, HeavyMissileDamage = 2f, BombDamage = 10f, TorpedoDamage = 1.5f;
+    const float DamagePerCloseCall = 0.1f, PointBlankDamage = 3f;
 
-    static readonly AccessTools.FieldRef<Blastzone, Vector3> BlastPosition = AccessTools.FieldRefAccess<Blastzone, Vector3>("_blastPosition");
     static readonly AccessTools.FieldRef<Blastzone, ObjectBase> BlastPlatform = AccessTools.FieldRefAccess<Blastzone, ObjectBase>("_launchPlatform");
     static readonly AccessTools.FieldRef<Blastzone, AmmunitionParameters> BlastAmmo = AccessTools.FieldRefAccess<Blastzone, AmmunitionParameters>("_ap");
-    static readonly AccessTools.FieldRef<Blastzone, Projectile> BlastShell = AccessTools.FieldRefAccess<Blastzone, Projectile>("_projectile");
     static readonly AccessTools.FieldRef<Blastzone, WeaponBase> BlastWeapon = AccessTools.FieldRefAccess<Blastzone, WeaponBase>("_weapon");
 
     static bool InFleet(ObjectBase o) => o != null && Run.Current != null && Run.Current.Fleet.Contains(o);
@@ -31,13 +27,11 @@ static class EnsignCombat
     static float OurDamage(AmmunitionParameters ap)
     {
         float factor = 1f;
-        if (Ensigns.Active(Ensigns.LastStand)) factor *= Run.Current.FlagshipHit ? LastStandHit : LastStandUnhit;
-        if (Ensigns.Active(Ensigns.LongRange)) factor *= LongRangeDamage;
+        if (Ensigns.Active(Ensigns.LastStand)) factor *= 1f + DamagePerCloseCall * Run.Current.CloseCalls;
         switch (ap._type)
         {
             case Ammunition.Type.Projectile:
                 if (Ensigns.Active(Ensigns.HeavyGuns)) factor *= HeavyGunDamage;
-                if (Ensigns.Active(Ensigns.SmallGuns) && Ensigns.SmallCalibre(ap)) factor *= SmallGunDamage;
                 break;
             case Ammunition.Type.Missile:
                 if (Ensigns.Active(Ensigns.HeavyMissiles)) factor *= HeavyMissileDamage;
@@ -61,19 +55,34 @@ static class EnsignCombat
             var run = Run.Current;
             if (run == null || run.Hoisted.Count == 0) return;
             var platform = BlastPlatform(__instance);
-            if (InFleet(platform)) __result *= OurDamage(BlastAmmo(__instance));
-            else if (platform is Vessel && platform._taskforce == Globals._enemyTaskforce && Ensigns.Active(Ensigns.SlowEnemies)) __result *= EnemyShipDamage;
-            if (InFleet(__0) && Ensigns.Active(Ensigns.Unsinkable) && !IsMissile(BlastAmmo(__instance))) __result *= UnsinkableOtherDamage;
+            if (!InFleet(platform)) return;
+            var ap = BlastAmmo(__instance);
+            __result *= OurDamage(ap);
+            if (__0 is Vessel && ap._type == Ammunition.Type.Projectile && Ensigns.Active(Ensigns.PointBlank))
+                __result *= PointBlankFactor(platform, __0, ap);
         }
     }
 
-    static bool IsMissile(AmmunitionParameters ap) => ap._type == Ammunition.Type.Missile || ap._type == Ammunition.Type.ASROC;
+    /// <summary>The Icelandic ensign: the full factor at no distance, falling evenly to none at the gun's greatest range, whatever has stretched it.</summary>
+    static float PointBlankFactor(ObjectBase gun, ObjectBase target, AmmunitionParameters ap)
+    {
+        float range = ap._maxLaunchRangeInMiles;
+        if (range <= 0f) return 1f;
+        return Mathf.Lerp(PointBlankDamage, 1f, (float)gun._geoPosition.getDistanceInMiles(target._geoPosition) / range);
+    }
+
+    static bool SpendsCharge(AmmunitionParameters ap) =>
+        ap != null && (ap._type == Ammunition.Type.Missile || ap._type == Ammunition.Type.Bomb || ap._type == Ammunition.Type.Torpedo);
+
+    /// <summary>The last blast the flagship ignored: one explosion can reach it more than once, and is only one hit.</summary>
+    static Blastzone ignored;
 
     /// <summary>
-    /// A blast that should not touch this unit at all: an enemy missile on an
-    /// Unsinkable fleet, or a gas shell on a ship. The hit's whole calculation is
-    /// skipped, so it leaves no fire or flooding either, and it records no impact
-    /// for the hidden integrity drain to act on.
+    /// The Turkish ensign: an enemy missile, bomb or torpedo the flagship has a
+    /// charge to ignore, whether it strikes the hull or goes off close enough to
+    /// harm it. Shells do not spend one. The hit's whole calculation is skipped,
+    /// so it leaves no fire or flooding either, and it records no impact for the
+    /// hidden integrity drain to act on.
     /// </summary>
     [HarmonyPatch(typeof(Blastzone), "OnHitUnit")]
     static class NoHarm
@@ -84,10 +93,13 @@ static class EnsignCombat
         {
             var run = Run.Current;
             if (run == null || run.Hoisted.Count == 0) return true;
-            var ap = BlastAmmo(__instance);
-            if (InFleet(__0) && Ensigns.Active(Ensigns.Unsinkable) && ap != null && IsMissile(ap) && !InFleet(BlastPlatform(__instance))) return false;
-            if (__0 is Vessel && BlastShell(__instance) != null && InFleet(BlastPlatform(__instance)) && Ensigns.Active(Ensigns.GasShells)) return false;
-            return true;
+            if (__0 != run.Ship || !run.Hoisted.Contains(Ensigns.HitProof) || InFleet(BlastPlatform(__instance))) return true;
+            if (__instance == ignored) return false;
+            if (run.HitsToIgnore <= 0 || !SpendsCharge(BlastAmmo(__instance))) return true;
+            run.HitsToIgnore--;
+            ignored = __instance;
+            TestPanel.Report($"{Ensigns.HitProof.Name}: the flagship ignores a hit, {run.HitsToIgnore} left");
+            return false;
         }
     }
 
@@ -111,93 +123,6 @@ static class EnsignCombat
         static void Postfix(ref float __result) => __result *= ShellCollision.factor;
     }
 
-    // Corrosive gas.
-
-    sealed class Cloud
-    {
-        public GeoPosition At;
-        public double Ends;
-        /// <summary>Hidden integrity a ship inside loses each second.</summary>
-        public float Rate;
-        public GameObject Smoke;
-    }
-
-    /// <summary>Oldest first. Bounded, as a fast gun lands several shells a second and each is a cloud.</summary>
-    static readonly List<Cloud> clouds = new List<Cloud>();
-    const int MaxClouds = 400;
-    /// <summary>Smoke is only for seeing where the gas lies, so clouds this close share one plume.</summary>
-    const float SmokeSpacingNm = 0.5f;
-    static readonly string[] SmokeClasses = { "NatoRadarFire", "VehicleSmokes" };
-
-    /// <summary>A gas shell has come down, on a hull or in the water. Flak bursting in the air makes no cloud.</summary>
-    [HarmonyPatch(typeof(Blastzone), MethodType.Constructor, typeof(Projectile), typeof(Vector3))]
-    static class GasShell
-    {
-        const float MaxHeightUnity = 1.5f;
-
-        static void Postfix(Projectile __0, Vector3 __1)
-        {
-            if (__0 == null || __1.y > MaxHeightUnity || !Ensigns.Active(Ensigns.GasShells) || !InFleet(__0._launchPlatform)) return;
-            var ap = __0._pp;
-            if (ap == null) return;
-            var at = __0._launchPlatform._geoPosition;
-            at.FromUnity(__1);
-            // The warhead's whole damage, in the hidden pool, over the cloud's life: any ship
-            // that stays inside takes it all, with no armour and no table of shell sizes.
-            Bloom(at, ap._warheadPower * ap._damageMultiplier * OurDamage(ap) / Ensigns.GasSeconds, __1);
-        }
-    }
-
-    static void Bloom(GeoPosition at, float rate, Vector3 world)
-    {
-        if (clouds.Count >= MaxClouds) Remove(clouds[0]);
-        var cloud = new Cloud { At = at, Rate = rate, Ends = GameTime.missionElapsedTime + Ensigns.GasSeconds };
-        if (!clouds.Any(c => c.Smoke != null && (float)c.At.getDistanceInMiles(at) < SmokeSpacingNm))
-            cloud.Smoke = SpawnSmoke(world);
-        clouds.Add(cloud);
-    }
-
-    static GameObject SpawnSmoke(Vector3 at)
-    {
-        try
-        {
-            var effects = Singleton<EffectsManager>.Instance;
-            foreach (var name in SmokeClasses)
-            {
-                var prefab = effects.getRandomEffectFromClass(name);
-                if (prefab != null) return Object.Instantiate(prefab, at, Quaternion.identity);
-            }
-        }
-        catch (System.Exception e) { Entry.Log.LogWarning($"No smoke for a gas cloud: {e.Message}"); }
-        return null;
-    }
-
-    static void Remove(Cloud cloud)
-    {
-        if (cloud.Smoke != null) Object.Destroy(cloud.Smoke);
-        clouds.Remove(cloud);
-    }
-
-    static void TickGas(float dt)
-    {
-        double now = GameTime.missionElapsedTime;
-        foreach (var done in clouds.Where(c => now >= c.Ends).ToList()) Remove(done);
-        if (clouds.Count == 0) return;
-        foreach (var ship in Singleton<ObjectsManager>.Instance._listOfAllVesselObjects)
-        {
-            if (!EnemyShip(ship) || !(ship is Vessel vessel) || vessel._compartments == null) continue;
-            float rate = clouds.Where(c => (float)c.At.getDistanceInMiles(ship._geoPosition) <= Ensigns.GasNm).Sum(c => c.Rate);
-            if (rate <= 0f) continue;
-            float damage = rate * dt;
-            var compartments = vessel._compartments;
-            // The game's own way of sinking a ship whose hidden pool has run out (Blastzone.CheckForInstakill).
-            compartments._limitIntegrity -= damage;
-            if (compartments._limitIntegrity < 0f && compartments._delayedSinkTime < 0.0) compartments._delayedSinkTime = 0.001;
-            if (ship.Info._damageByTaskforce.ContainsKey(Globals._playerTaskforce)) ship.Info._damageByTaskforce[Globals._playerTaskforce] += damage;
-            else ship.Info._damageByTaskforce.Add(Globals._playerTaskforce, damage);
-        }
-    }
-
     // EMP mortars.
 
     /// <summary>Ships whose radars an EMP has shut down, and when they come back.</summary>
@@ -219,10 +144,12 @@ static class EnsignCombat
 
     static void Pulse(GeoPosition at)
     {
-        double until = GameTime.missionElapsedTime + Ensigns.EmpSeconds;
+        int rank = Run.Current.RankOf(Upgrades.Mortars);
+        double until = GameTime.missionElapsedTime + Ensigns.EmpSeconds(rank);
+        float reach = Ensigns.EmpNm(rank);
         foreach (var ship in Singleton<ObjectsManager>.Instance._listOfAllVesselObjects)
         {
-            if (!EnemyShip(ship) || (float)ship._geoPosition.getDistanceInMiles(at) > Ensigns.EmpNm) continue;
+            if (!EnemyShip(ship) || (float)ship._geoPosition.getDistanceInMiles(at) > reach) continue;
             if (!darkened.ContainsKey(ship)) TestPanel.Report($"EMP: {ship.Name.Value} goes dark");
             darkened[ship] = until;
             SetDark(ship, true);
@@ -262,21 +189,13 @@ static class EnsignCombat
     internal static void Tick(Run run, float dt)
     {
         if (run.Hoisted.Count == 0) return;
-        if (!run.FlagshipHit && run.Ship is Vessel flagship && flagship._compartments != null &&
-            (flagship._compartments._limitIntegrity < flagship._compartments._maxLimitIntegrity ||
-             flagship._compartments.TotalIntegrity < flagship._compartments._maxTotalIntegrity * 0.999f))
-        {
-            run.FlagshipHit = true;
-            if (run.Hoisted.Contains(Ensigns.LastStand)) TestPanel.Report("Dannebrog: the flagship is hit, damage +200%");
-        }
-
         if (run.Hoisted.Contains(Ensigns.LongCiws))
             foreach (var ship in run.Fleet.Where(s => s != null && !s.IsDestroyed && !s.IsAirUnit))
-                foreach (var launcher in Boosts.SamLaunchers(ship))
+                // A launcher that also holds Harpoons, ASROC or Tomahawks stays in action: NoAirMissiles keeps its SAMs from being fired.
+                foreach (var launcher in Boosts.SamLaunchers(ship).Where(l => Boosts.LauncherAmmo(l).All(Boosts.AirToAir)))
                     launcher.Inoperable.Value = true;
 
         if (run.Hoisted.Contains(Ensigns.TorpedoEcm)) EcmFit.Tick(run);
-        if (run.Hoisted.Contains(Ensigns.GasShells)) TickGas(dt);
         if (run.Hoisted.Contains(Ensigns.EmpMortars)) TickDark();
         if (run.Hoisted.Contains(Ensigns.WireGuided)) TickWires(run);
     }
@@ -354,24 +273,24 @@ static class EnsignCombat
 
         static void Postfix(WeaponSystemCIWS __instance)
         {
-            if (__instance._projectileLifeTime > MaxTracerSeconds && Ensigns.Active(Ensigns.LongCiws))
+            if (__instance._projectileLifeTime > MaxTracerSeconds && Ensigns.Active(Ensigns.LongCiws) && InFleet(__instance._baseObject))
                 __instance._projectileLifeTime = MaxTracerSeconds;
         }
     }
 
-    // Small guns' aim: per gun, where the Accuracy line works per crew.
+    // The Dutch ensign's guns: fleet guns only, where the Accuracy line works per crew and so also reaches anything else it steers.
 
-    /// <summary>The surface-fire error reads its crew's multiplier; for a small gun that is lent a lower one for the call.</summary>
+    /// <summary>The surface-fire error reads its crew's multiplier; for a fleet gun that is lent a lower one for the call.</summary>
     [HarmonyPatch(typeof(WeaponSystemGun), "DeviationCheck")]
-    static class SmallGunAim
+    static class DutchGunAim
     {
-        static void Prefix(WeaponSystemGun __instance, Ammunition __0, out float? __state)
+        static void Prefix(WeaponSystemGun __instance, out float? __state)
         {
             __state = null;
             var crew = __instance._baseObject?._crew;
-            if (crew == null || !Ensigns.Active(Ensigns.SmallGuns) || !InFleet(__instance._baseObject) || !Ensigns.SmallCalibre(__0?._ap)) return;
+            if (crew == null || !Ensigns.Active(Ensigns.LongCiws) || !InFleet(__instance._baseObject)) return;
             __state = crew._fcErrorMultiplier;
-            crew._fcErrorMultiplier *= Ensigns.SmallGunAimFactor;
+            crew._fcErrorMultiplier *= Ensigns.DutchAimFactor;
         }
 
         static void Finalizer(WeaponSystemGun __instance, float? __state)
@@ -383,20 +302,40 @@ static class EnsignCombat
     /// <summary>The same for the lead against aircraft, which the crew's multiplier never reaches.</summary>
     [HarmonyPatch(typeof(WeaponSystemGun), nameof(WeaponSystemGun.BuildAaErrorBudget),
         new[] { typeof(Ammunition), typeof(float), typeof(float), typeof(float), typeof(float), typeof(float), typeof(float) })]
-    static class SmallGunLead
+    static class DutchGunLead
     {
-        static void Postfix(WeaponSystemGun __instance, Ammunition __0, ref WeaponSystemGun.AaErrorBudget __result)
+        static void Postfix(WeaponSystemGun __instance, ref WeaponSystemGun.AaErrorBudget __result)
         {
-            if (Ensigns.Active(Ensigns.SmallGuns) && InFleet(__instance._baseObject) && Ensigns.SmallCalibre(__0?._ap))
-                __result._predictionSigma *= Ensigns.SmallGunAimFactor;
+            if (!Ensigns.Active(Ensigns.LongCiws) || !InFleet(__instance._baseObject)) return;
+            // The director's errors. The gun's own dispersion and the target's evasion are not aim.
+            __result._angularSigma *= Ensigns.DutchAimFactor;
+            __result._laySigma *= Ensigns.DutchAimFactor;
+            __result._rangeSigma *= Ensigns.DutchAimFactor;
+            __result._predictionSigma *= Ensigns.DutchAimFactor;
+            __result._solutionBiasSigma *= Ensigns.DutchAimFactor;
+        }
+    }
+
+    /// <summary>
+    /// The Indian ensign: twice the anti-ship missiles at each launch. The AI's
+    /// auto-attack fires them one at a time, so this makes two.
+    /// </summary>
+    [HarmonyPatch(typeof(AI), "AutoAttackSalvoSize")]
+    static class DoubleSalvo
+    {
+        static readonly AccessTools.FieldRef<AI, ObjectBase> AiShip = AccessTools.FieldRefAccess<AI, ObjectBase>("_baseObject");
+
+        static void Postfix(AI __instance, Ammunition ammo, ref int __result)
+        {
+            // The target type alone would take in bombs, rockets and shells too.
+            if (Ensigns.Active(Ensigns.Salvos) && ammo?._ap != null && ammo._ap._type == Ammunition.Type.Missile && Boosts.AntiShipMissile(ammo._ap) && InFleet(AiShip(__instance)))
+                __result *= 2;
         }
     }
 
     internal static void Reset()
     {
-        foreach (var cloud in clouds)
-            if (cloud.Smoke != null) Object.Destroy(cloud.Smoke);
-        clouds.Clear();
+        ignored = null;
         darkened.Clear();
         EcmFit.Reset();
     }

@@ -544,10 +544,15 @@ static class Upgrades
         var stats = new List<string>();
         var abilities = new List<string>();
         var seen = new HashSet<Stat>();
+        // Under the St Andrew's flag every rank grows the pulse, and warheads are gone.
+        bool emp = line == Mortars && Ensigns.Active(Ensigns.EmpMortars);
+        if (emp) stats.Add($"EMP pulse reaches {Ensigns.EmpNm(to):0.#} nm and lasts {Ensigns.EmpSeconds(to):0} s");
         for (int i = from; i < to; i++)
         {
             var step = line.Path[i];
-            if (step.IsAbility) abilities.Add($"{step.Name}: {step.Text}");
+            if (step.Stat == Stat.Refit && Ensigns.Active(Ensigns.IronBombs)) abilities.Add($"{step.Name}: flights keep their bombs");
+            else if (step.IsAbility) abilities.Add($"{step.Name}: {step.Text}");
+            else if (emp && step.Stat == Stat.Damage) continue;
             else if (seen.Add(step.Stat)) stats.Add(Text(step, Gain(line, step.Stat, from, to)));
         }
         return (stats, abilities);
@@ -557,16 +562,19 @@ static class Upgrades
     public static IEnumerable<Stat> StatsIn(Upgrade line, int from, int to) =>
         line.Path.Skip(from).Take(to - from).Where(s => s.Stat != Stat.Ability).Select(s => s.Stat).Distinct();
 
+    /// <summary>A rank that does nothing under the ensigns flown: refits, for flights that keep their iron bombs.</summary>
+    static bool Idle(Step step) => step.Stat == Stat.Refit && Ensigns.Active(Ensigns.IronBombs);
+
     /// <summary>The first ability at or after <paramref name="from"/> (an index), and how many ranks away it is; null past the last.</summary>
     public static (Step step, int ranks)? NextAbility(Upgrade line, int from)
     {
         for (int i = from; i < line.Path.Length; i++)
-            if (line.Path[i].IsAbility) return (line.Path[i], i + 1 - from);
+            if (line.Path[i].IsAbility && !Idle(line.Path[i])) return (line.Path[i], i + 1 - from);
         return null;
     }
 
     /// <summary>A line's abilities already taken.</summary>
-    public static IEnumerable<Step> Earned(Run run, Upgrade line) => line.Path.Take(run.RankOf(line)).Where(s => s.IsAbility);
+    public static IEnumerable<Step> Earned(Run run, Upgrade line) => line.Path.Take(run.RankOf(line)).Where(s => s.IsAbility && !Idle(s));
 
     /// <summary>What a line's taken ranks add up to, a line per stat: the HUD's "in effect".</summary>
     public static List<string> Summary(Run run, Upgrade line)
