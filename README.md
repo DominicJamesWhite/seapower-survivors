@@ -14,6 +14,7 @@ this.
 | [design.md](design.md) | The game design: hulls, XP, upgrades, waves, pickups |
 | [docs/combat-model.md](docs/combat-model.md) | How Sea Power's weapons, fire control and damage actually work |
 | [docs/hooks.md](docs/hooks.md) | Where in the game code each feature attaches |
+| [docs/balance.md](docs/balance.md) | Comparing weapon cards by numbers: the calculator and the damage log |
 
 Most of `docs/` comes from decompiled code and shipped data, not
 from play; what has been seen working is listed under "Confirmed in game" in
@@ -83,8 +84,8 @@ screen. It opens the Survivors screen:
   `campaigns/qs-quick-battles/art/` folder into
   `Sea Power_Data/StreamingAssets/SeapowerSurvivors/art/`. They are not
   part of this repository: the art is Quick Start's author's.
-- **Fleet.** Pick a flagship, and buy starting ships and flights for its
-  navy. Click a bought ship or flight to leave it ashore for the next run.
+- **Fleet.** Pick a flagship, and buy escorts for its navy. Click a bought
+  escort to deselect it for the next run.
 - **Starting bonuses.** Permanent upgrades, bought rank by rank, which can
   be refunded.
 

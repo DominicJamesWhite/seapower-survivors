@@ -26,7 +26,7 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
     public List<AreaCard> Areas { get; private set; }
     public string AreaName { get; private set; }
     public string AreaBlurb { get; private set; }
-    public string AreaApproach { get; private set; }
+    public string AreaRecord { get; private set; }
     public List<ShipRow> Flagships { get; private set; }
     public List<ShipRow> Escorts { get; private set; }
     public string FleetSummary { get; private set; }
@@ -78,7 +78,7 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
         LaunchCommand = new DelegateCommand(_ => !Launcher.Launching, _ => Launch());
         RefundCommand = new DelegateCommand(_ => Profile.Refundable > 0, _ =>
         {
-            Say($"Refunded {Profile.Refund()} XP");
+            Profile.Refund();
             Refresh();
         });
         Refresh();
@@ -130,29 +130,11 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
     {
         var hoisted = profile.HoistedEnsigns();
         if (hoisted.Contains(ensign))
-        {
             profile.Strike(ensign);
-            Say($"{ensign.Name} struck");
-        }
-        else if (!profile.Owns(Store.EnsignId(ensign)))
+        else if (profile.Owns(Store.EnsignId(ensign)) || profile.TryBuy(Store.EnsignItem(ensign)))
         {
-            var item = Store.EnsignItem(ensign);
-            if (profile.TryBuy(item))
-            {
-                Say($"{ensign.Name} unlocked for {item.Price:N0} XP");
-                if (CanFly(profile, ensign, hoisted)) profile.Hoist(ensign);
-            }
-        }
-        else if (Ensigns.ClashWith(ensign, hoisted) is Ensign clash)
-            Say($"{ensign.Name} cannot fly with {clash.Name}");
-        else if (!Ensigns.Fits(ensign, Setup.Flagship(profile).Type))
-            Say($"{ensign.Name} does nothing on {Setup.Flagship(profile).Name}");
-        else if (Ensigns.PointsFlown(hoisted) + ensign.Points > Ensigns.Budget)
-            Say($"Not enough points for {ensign.Name} (needs {ensign.Points} / {Ensigns.Budget - Ensigns.PointsFlown(hoisted)})");
-        else
-        {
-            profile.Hoist(ensign);
-            Say($"{ensign.Name} hoisted");
+            // The card already says why one that cannot fly is not hoisted.
+            if (CanFly(profile, ensign, hoisted)) profile.Hoist(ensign);
         }
         Refresh();
     }
@@ -176,29 +158,23 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
         Bank = $"{profile.Bank:N0} XP to spend";
         Earned = $"{profile.Earned:N0} XP earned over {profile.Runs} run{(profile.Runs == 1 ? "" : "s")}";
 
-        Areas = SeapowerSurvivors.Areas.All.Select(a => new AreaCard(a, a == area, () => Choose(a, flagship))).ToList();
+        Areas = SeapowerSurvivors.Areas.All.Select(a => new AreaCard(a, a == area, profile.BestScore(a.Id), () => Choose(a, flagship))).ToList();
         AreaName = area.Name;
         AreaBlurb = area.Blurb;
-        AreaApproach = Approach(area);
+        AreaRecord = Record(profile.BestScore(area.Id));
 
         Flagships = Launcher.Flagships.Select(ship => FlagshipRow(profile, ship, ship == flagship, area)).ToList();
         Escorts = Store.StartingEscorts(flagship).Select(escort => EscortRow(profile, escort)).ToList();
-        var sailing = Setup.Sailing(profile);
-        FleetSummary = sailing.Count == 0
-            ? $"{flagship.Name} sails alone."
-            : Setup.OneEscortOnly(profile)
-                ? $"{flagship.Name} sails with {Ensigns.EscortCopies} × {sailing[0].Name}."
-                : $"{flagship.Name} sails with {string.Join(", ", sailing.Select(e => e.Name))}.";
+        var hoisted = profile.HoistedEnsigns();
+        FleetSummary = Summary(profile, flagship, hoisted);
 
         Formation.Rebuild();
 
         Bonuses = Store.PowerUps.Select(powerUp => new BonusRow(profile, powerUp, () =>
         {
-            int rank = profile.RankOf(powerUp);
-            if (profile.TryBuyRank(powerUp)) Say($"{powerUp.Name} rank {rank + 1} bought");
+            profile.TryBuyRank(powerUp);
             Refresh();
         })).ToList();
-        var hoisted = profile.HoistedEnsigns();
         EnsignSlots = hoisted.Select(e => new EnsignSlot(e)).ToList();
         int spent = Ensigns.PointsFlown(hoisted);
         // The wording of the game's own Task Force builder.
@@ -212,11 +188,31 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
 
         foreach (var name in new[]
                  {
-                     nameof(Bank), nameof(Earned), nameof(Areas), nameof(AreaName), nameof(AreaBlurb), nameof(AreaApproach),
+                     nameof(Bank), nameof(Earned), nameof(Areas), nameof(AreaName), nameof(AreaBlurb), nameof(AreaRecord),
                      nameof(Flagships), nameof(Escorts), nameof(FleetSummary), nameof(Bonuses), nameof(RefundText),
                      nameof(EnsignSlots), nameof(EnsignSummary), nameof(EnsignBudget), nameof(EnsignPips), nameof(EnsignCards),
                  })
             Changed(name);
+    }
+
+    /// <summary>Under the chosen area's briefing: the fleet that set its high score. Nothing if it has none.</summary>
+    static string Record(HighScore best)
+    {
+        if (best == null) return "";
+        string ship = Launcher.Flagships.FirstOrDefault(s => s.Type == best.Flagship)?.Name ?? best.Flagship;
+        static string Listed(List<string> names) => names.Count == 0 ? "None" : string.Join(", ", names);
+        return $"High score fleet\nFlagship: {ship}\nEscorts: {Listed(best.Escorts)}\nEnsigns: {Listed(best.Ensigns)}";
+    }
+
+    /// <summary>The line under the escort list: what sails, in the numbers it will sail in.</summary>
+    static string Summary(Profile profile, StartingShip flagship, List<Ensign> hoisted)
+    {
+        var sailing = Setup.Sailing(profile);
+        if (sailing.Count > 0 && Setup.OneEscortOnly(profile)) return $"{flagship.Name} sails with {Ensigns.EscortCopies} × {sailing[0].Name}.";
+        string Named(Escort e) => e.Name + Ensigns.Times(Ensigns.AircraftFactor(hoisted, e));
+        var names = sailing.Select(Named).ToList();
+        if (EnsignCombat.FreeStrikeFlight(hoisted, sailing, flagship) is Escort free) names.Add($"{Named(free)} (free)");
+        return names.Count == 0 ? $"{flagship.Name} sails alone." : $"{flagship.Name} sails with {string.Join(", ", names)}.";
     }
 
     void Choose(Area area, StartingShip flagship)
@@ -228,18 +224,14 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
     ShipRow FlagshipRow(Profile profile, StartingShip ship, bool chosen, Area area)
     {
         var item = Store.Flagship(ship);
-        string navy = ship.Soviet ? "Soviet: fights NATO" : "US Navy: fights the Soviets";
+        string title = $"{ship.Name} ({ship.Year})";
         if (profile.Owns(item.Id))
-            return new ShipRow(ship.Name, navy, chosen ? "Flagship" : "Owned", chosen, false, () => Choose(area, ship), canClick: true);
+            return new ShipRow(title, ship.Weapons, chosen ? "Flagship" : "Owned", chosen, false, () => Choose(area, ship), canClick: true);
         if (item.WonBy != null)
-            return new ShipRow(ship.Name, $"{navy}. {item.WonBy} to unlock", "Locked", false, false, () => { }, canClick: false);
-        return new ShipRow(ship.Name, navy, $"{item.Price:N0} XP", false, true, () =>
+            return new ShipRow(title, $"{ship.Weapons}\n{item.WonBy} to unlock", "Locked", false, false, () => { }, canClick: false);
+        return new ShipRow(title, ship.Weapons, $"{item.Price:N0} XP", false, true, () =>
             {
-                if (profile.TryBuy(item))
-                {
-                    Say($"{ship.Name} bought for {item.Price:N0} XP");
-                    profile.Choose(area, ship);
-                }
+                if (profile.TryBuy(item)) profile.Choose(area, ship);
                 Refresh();
             }, canClick: profile.CanBuy(item));
     }
@@ -247,41 +239,24 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
     ShipRow EscortRow(Profile profile, Escort escort)
     {
         var item = Store.EscortItem(escort);
-        string detail = (escort.IsAir ? $"Flight of {escort.Count}: " : "Ship: ") + SeapowerSurvivors.Escorts.Describe(escort.Roles);
+        string title = $"{escort.Name} ({escort.Year}){Ensigns.Times(Ensigns.AircraftFactor(profile.HoistedEnsigns(), escort))}";
         if (profile.Owns(item.Id))
         {
             bool sails = Setup.Sailing(profile).Contains(escort);
-            string name = sails && Setup.OneEscortOnly(profile) ? $"{escort.Name} ×{Ensigns.EscortCopies}" : escort.Name;
-            return new ShipRow(name, detail, sails ? "Sails" : "Ashore", sails, false, () =>
+            string name = sails && Setup.OneEscortOnly(profile) ? $"{title} ×{Ensigns.EscortCopies}" : title;
+            return new ShipRow(name, escort.Weapons, sails ? "Active" : "Not selected", sails, false, () =>
             {
                 Setup.SetSails(profile, escort, !sails);
                 Refresh();
             }, canClick: true);
         }
-        return new ShipRow(escort.Name, detail, $"{item.Price:N0} XP", false, true, () =>
+        return new ShipRow(title, escort.Weapons, $"{item.Price:N0} XP", false, true, () =>
         {
-            if (profile.TryBuy(item))
-            {
-                Setup.SetSails(profile, escort, true);
-                Say($"{escort.Name} bought for {item.Price:N0} XP: it sails with the flagship");
-            }
+            if (profile.TryBuy(item)) Setup.SetSails(profile, escort, true);
             Refresh();
         }, canClick: profile.CanBuy(item));
     }
 
-    /// <summary>Which way the enemy comes from, in compass words, as <see cref="Sea"/> will send it.</summary>
-    static string Approach(Area area)
-    {
-        var start = area.PlayerStart;
-        string ships = Compass(start.HeadingToPosition(area.EnemyWaters));
-        if (area.EnemyAirfield == null) return $"Ships and aircraft come from the {ships}.";
-        string air = Compass(start.HeadingToPosition(area.EnemyAir));
-        return air == ships ? $"Ships and aircraft come from the {ships}." : $"Ships come from the {ships}; aircraft mostly from the {air}.";
-    }
-
-    static readonly string[] Points = { "north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west" };
-
-    static string Compass(float bearing) => Points[(int)Math.Round(((bearing % 360f) + 360f) % 360f / 45f) % 8];
 }
 
 /// <summary>An area to fight in: Quick Start's painting if it can be found, its name, and whether it is chosen.</summary>
@@ -293,14 +268,17 @@ public sealed class AreaCard
     public string Region { get; }
     public ImageSource Art { get; }
     public bool Selected { get; }
+    /// <summary>The area's high score, in the wording of the game's own Scenarios menu.</summary>
+    public string Score { get; }
     public ICommand Command { get; }
 
-    internal AreaCard(Area area, bool chosen, Action choose)
+    internal AreaCard(Area area, bool chosen, HighScore best, Action choose)
     {
         Name = area.Name;
         Region = area.Region;
         Art = LoadArt(area);
         Selected = chosen;
+        Score = best != null ? $"High Score: {best.Score:N0}" : "High Score: none yet";
         Command = new DelegateCommand(_ => choose());
     }
 

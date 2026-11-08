@@ -44,50 +44,50 @@ static class Ensigns
     public const int Budget = 20;
 
     public static readonly Ensign HeavyGuns = new Ensign("heavy-guns", "Stars and Stripes", "United States Navy", 400, 5,
-        "Guns do 300% more damage and fire half as fast");
+        "Guns do 4x more damage, but rate of fire is cut by 50%");
     public static readonly Ensign HeavyMissiles = new Ensign("heavy-missiles", "Soviet Naval Ensign", "Soviet Navy", 500, 7,
-        "All missiles do 2× damage");
+        "All SAMs, ASMs and AAMs do 2× damage");
     public static readonly Ensign LongCiws = new Ensign("long-ciws", "Dutch Tricolour", "Royal Netherlands Navy", 900, 8,
         "CIWS range ×100. Guns aim 4× as well, and fire and reload 2× as fast. SAMs and air-to-air missiles are disabled");
     public static readonly Ensign EmpMortars = new Ensign("emp-mortars", "St Andrew's Flag", "Russian Navy", 700, 5,
         "Mortar rounds are EMPs instead of warheads: radars and fire control go dark. Each mortar rank widens the pulse and makes it last longer. Sovremenny, Slava, Kirov and Kiev only");
     public static readonly Ensign DoubleAir = new Ensign("double-air", "Australian White Ensign", "Royal Australian Navy", 600, 4,
-        "Starting flights come double, or a free fighter pair if you have none");
-    public static readonly Ensign Salvos = new Ensign("gas-shells", "Indian Naval Ensign", "Indian Navy", 1000, 5,
-        "Anti-ship missile salvos are twice the size");
+        "Double the number of aircraft you get per card or escort.");
+    public static readonly Ensign FastAsms = new Ensign("gas-shells", "Indian Naval Ensign", "Indian Navy", 1000, 5,
+        "Your ASMs move twice as fast.");
     public static readonly Ensign FiveOfAKind = new Ensign("five-of-a-kind", "Greek Ensign", "Hellenic Navy", 800, 7,
-        "Your first ship or flight, from the start or a chest, comes as five, and is your only escort. Chests then hold only level-ups");
+        "You can only select one type of escort, but you get 5 of them.");
     public static readonly Ensign RareCards = new Ensign("rare-cards", "Norwegian Ensign", "Royal Norwegian Navy", 700, 10,
         "Cards are at least Rare");
     public static readonly Ensign LongRange = new Ensign("long-range", "White Ensign", "Royal Navy", 800, 8,
-        "Guns, missiles, torpedoes and mortars reach 3× as far");
+        "Guns, missiles, torpedoes and mortars reach 3× further");
     public static readonly Ensign FastTorpedoes = new Ensign("fast-torpedoes", "Italian Naval Ensign", "Italian Navy", 400, 5,
         "Torpedoes run and turn 3× as fast, reach 3× as far, hit 1.5× as hard, and can target ships");
     public static readonly Ensign PointBlank = new Ensign("small-guns", "Icelandic Coast Guard Ensign", "Icelandic Coast Guard", 400, 5,
-        "Guns do up to 3× damage to ships as the range closes");
+        "Guns do up to 6× damage to ships as they get closer");
     public static readonly Ensign HitProof = new Ensign("unsinkable", "Turkish Naval Ensign", "Turkish Naval Forces", 1200, 7,
         "The flagship ignores one missile, bomb or torpedo, and one more every 5 levels");
     public static readonly Ensign FreeCards = new Ensign("green-crews", "Spanish Ensign", "Spanish Navy", 500, 4,
         "Start with four free cards");
     public static readonly Ensign LastStand = new Ensign("last-stand", "Dannebrog", "Royal Danish Navy", 600, 4,
-        "Each close call adds 10% to all your damage for the rest of the run");
+        "Each time an enemy attack gets within 3nm of your fleet, your damage is increased by 20% for the rest of the run. This effect can only occur once per 10s.");
     public static readonly Ensign TorpedoEcm = new Ensign("torpedo-ecm", "German Naval Ensign", "German Navy", 800, 6,
-        "Ships with torpedo tubes carry the EA-6B's jammer instead, which you aim. Torpedo cards become jammer cards");
+        "All torpedo tubes are replaced by the EA-6B's ECM jammer. Any Torpedo bonuses are replaced by Jammer bonuses.");
     public static readonly Ensign ChestsTwice = new Ensign("slow-enemies", "New Zealand White Ensign", "Royal New Zealand Navy", 600, 6,
-        "Each ship or flight from a chest comes as two");
+        "Ship and Aircraft escort cards awarded during a run provide you with 2 of the selected escort.");
     public static readonly Ensign MoreChoice = new Ensign("two-cards", "Irish Tricolour", "Irish Naval Service", 500, 5,
         "A fourth card at every level-up, 3 more rerolls and 3 more banishes");
     public static readonly Ensign WireGuided = new Ensign("wire-guided", "Swedish Naval Ensign", "Swedish Navy", 400, 3,
-        "Torpedoes stay wire-guided for half their range, and can target ships");
+        "All torpedoes are wire-guided for half their range, and can target ships");
     public static readonly Ensign StealthAir = new Ensign("stealth-air", "Estonian Naval Ensign", "Estonian Navy", 400, 3,
-        "Your aircraft's radar signature −95%");
+        "Your aircraft's radar signatures are reduced by 95%");
     public static readonly Ensign IronBombs = new Ensign("iron-bombs", "Argentine Ensign", "Argentine Navy", 500, 6,
-        "Unguided bombs do 10× damage and land 10× closer. Strike aircraft carry only those, with a quarter of the radar signature. Start with a free strike pair");
+        "Unguided bombs do 10× damage and are 10x more accurate. Strike aircraft carry only those, with a quarter of the radar signature. Start with a free strike pair");
 
     public static readonly Ensign[] All =
     {
         LongRange, HeavyGuns, PointBlank, HeavyMissiles,
-        Salvos, LongCiws, EmpMortars, FastTorpedoes,
+        FastAsms, LongCiws, EmpMortars, FastTorpedoes,
         WireGuided, TorpedoEcm, DoubleAir, StealthAir,
         IronBombs, FiveOfAKind, ChestsTwice, HitProof,
         LastStand, RareCards, MoreChoice, FreeCards,
@@ -121,7 +121,10 @@ static class Ensigns
     // The numbers, for whatever is writing them into the game.
 
     internal const float WireFraction = 0.5f;
-    internal const int BonusCards = 4, EscortCopies = 5, ChestCopies = 2, ExtraRerolls = 3, ExtraBanishes = 3;
+    internal const int BonusCards = 4, EscortCopies = 5, ChestCopies = 2, AirCopies = 2, ExtraRerolls = 3, ExtraBanishes = 3;
+    /// <summary>The Dannebrog: how near enemy fire must come to a ship of ours, how often that can count, and what each time adds to our damage.</summary>
+    internal const float CloseCallNm = 3f, CloseCallSeconds = 10f;
+    internal const int CloseCallPercent = 20;
     /// <summary>The flagship gets another ignored hit each time its level reaches a multiple of this.</summary>
     internal const int LevelsPerIgnoredHit = 5;
     /// <summary>A quarter of the usual error: about ten ranks of the Accuracy line.</summary>
@@ -140,6 +143,7 @@ static class Ensigns
     internal static float GunRate => (Active(HeavyGuns) ? 0.5f : 1f) * (Active(LongCiws) ? 2f : 1f);
     internal static float GunReach => Active(LongRange) ? 3f : 1f;
     internal static float MissileReach => Active(LongRange) ? 3f : 1f;
+    internal static float AsmSpeed => Active(FastAsms) ? 2f : 1f;
     internal static float TorpedoSpeed => Active(FastTorpedoes) ? 3f : 1f;
     internal static float TorpedoReach => (Active(FastTorpedoes) ? 3f : 1f) * (Active(LongRange) ? 3f : 1f);
     internal static float MortarReach => Active(LongRange) ? 3f : 1f;
@@ -152,6 +156,20 @@ static class Ensigns
         line == Upgrades.Torpedoes && Active(TorpedoEcm) ||
         line == Upgrades.Jammers && !Active(TorpedoEcm);
 
+    /// <summary>What the Australian ensign multiplies a flight by, wherever it joins from. Ships are not touched.</summary>
+    internal static int AircraftFactor(IEnumerable<Ensign> hoisted, Escort escort) =>
+        escort.IsAir && hoisted.Contains(DoubleAir) ? AirCopies : 1;
+
+    /// <summary>How many times over a chest's escort joins: the Greek ensign's first five, or the New Zealand and Australian factors together.</summary>
+    internal static int ChestMultiple(Run run, Escort escort)
+    {
+        if (run.Hoisted.Contains(FiveOfAKind) && !run.EscortChosen) return EscortCopies;
+        return (run.Hoisted.Contains(ChestsTwice) ? ChestCopies : 1) * AircraftFactor(run.Hoisted, escort);
+    }
+
+    /// <summary>A multiple as a name shows it, or nothing for one of them.</summary>
+    internal static string Times(int multiple) => multiple > 1 ? $" ×{multiple}" : "";
+
     /// <summary>How many cards a level-up deals.</summary>
     internal static int CardCount(int usual) => Active(MoreChoice) ? usual + 1 : usual;
 
@@ -162,7 +180,7 @@ static class Ensigns
     internal static (string count, string line)? Tally(Run run, Ensign ensign)
     {
         if (ensign == HitProof) return (run.HitsToIgnore.ToString(), run.HitsToIgnore == 1 ? "1 left to ignore" : $"{run.HitsToIgnore} left to ignore");
-        if (ensign == LastStand) return (run.CloseCalls.ToString(), $"+{run.CloseCalls * 10}% damage from {run.CloseCalls} close call{(run.CloseCalls == 1 ? "" : "s")}");
+        if (ensign == LastStand) return (run.CloseCalls.ToString(), $"Current bonus: +{run.CloseCalls * CloseCallPercent}% damage");
         return null;
     }
 

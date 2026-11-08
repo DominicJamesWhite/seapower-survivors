@@ -8,7 +8,7 @@
     <Button Style="{DynamicResource MenuButton}" Command="{Binding OpenCommand}" Focusable="False" MinWidth="300" Padding="30,15">
         <StackPanel>
             <TextBlock Text="SURVIVORS" FontSize="25"/>
-            <TextBlock Text="Hold out for 75 minutes" FontSize="12" Foreground="{DynamicResource Brush.Foreground.Normal}" Margin="0,2,0,0"/>
+            <TextBlock Text="Hold out for 20 minutes" FontSize="12" Foreground="{DynamicResource Brush.Foreground.Normal}" Margin="0,2,0,0"/>
             <TextBlock Text="{Binding Bank}" FontSize="12" Foreground="{DynamicResource Brush.Foreground.Emphasis}" Margin="0,2,0,0"/>
         </StackPanel>
     </Button>

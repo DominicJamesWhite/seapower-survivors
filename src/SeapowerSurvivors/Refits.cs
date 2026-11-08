@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using SeaPower;
+using UnityEngine;
 
 namespace SeapowerSurvivors;
 
@@ -73,7 +74,7 @@ static class Refits
 
     /// <summary>The air wing standard: the Refit ranks taken, and those in the next <paramref name="ahead"/> ranks too.</summary>
     internal static int Standard(Run run, int ahead = 0) =>
-        run.Hoisted.Contains(Ensigns.IronBombs) ? 0 : Upgrades.AirWing.Path.Take(run.RankOf(Upgrades.AirWing) + ahead).Count(s => s.Stat == Stat.Refit);
+        Upgrades.AirWing.Path.Take(run.RankOf(Upgrades.AirWing) + ahead).Count(s => s.Stat == Stat.Refit);
 
     /// <summary>The ladder an aircraft is on and its rung, or null for one with no ladder: fighters, AWACS.</summary>
     static (Rung[] ladder, int index) Find(ObjectBase aircraft)
@@ -110,10 +111,10 @@ static class Refits
             .Where(a => a != null && !a.IsDestroyed && Next(a, standard) != null && !Busy(a))
             .ToList();
         if (due.Count == 0) return;
-        foreach (var aircraft in due)
+        for (int i = 0; i < due.Count; i++)
         {
-            try { Replace(run, aircraft, Next(aircraft, standard)); }
-            catch (Exception e) { Entry.Log.LogError($"Refitting {aircraft.Name.Value} failed: {e}"); }
+            try { Replace(run, due[i], Next(due[i], standard), i); }
+            catch (Exception e) { Entry.Log.LogError($"Refitting {due[i].Name.Value} failed: {e}"); }
         }
         Boosts.ApplyFleet(run);
     }
@@ -126,12 +127,22 @@ static class Refits
             w != null && !w.IsDestroyed && w.gameObject.activeInHierarchy && w._launchPlatform == aircraft && w._ap != null && w._ap._requiresGuidance && !onPylons.Contains(w));
     }
 
-    /// <summary>A new aircraft of the rung where the old one flies, with its orders' weapons status and its place in the fleet.</summary>
-    static void Replace(Run run, ObjectBase old, Rung rung)
+    /// <summary>
+    /// A new aircraft of the rung where the old one flies, with its orders'
+    /// weapons status and its place in the fleet. A stand-off bomber appears
+    /// out where its missiles can be fired instead.
+    /// </summary>
+    /// <param name="slot">Which of the aircraft refitted together this is, so stand-off bombers each have their own air.</param>
+    static void Replace(Run run, ObjectBase old, Rung rung, int slot)
     {
         string was = $"{old.Name.Value} ({Current(old)?.Name})";
         var at = old._geoPosition;
         float altitudeFt = (float)(at._height / Spawner.FeetToUnity);
+        if (Escorts.StandsOff(rung.Type))
+        {
+            at = Escorts.StandOffPosition(run, slot);
+            altitudeFt = Mathf.Max(altitudeFt, Escorts.StandOffAltitudeFt);
+        }
         var fresh = Spawner.Aircraft(rung.Type, "Squadron1", rung.Loadout, at, altitudeFt, old.transform.eulerAngles.y, Globals._playerTaskforce);
         if (fresh == null)
         {

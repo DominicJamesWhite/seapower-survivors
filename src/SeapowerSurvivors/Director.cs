@@ -39,6 +39,8 @@ public class Director : MonoBehaviour
 
     internal static Director Instance;
     internal float ThreatMultiplier = 1f;
+    /// <summary>How many times the usual number of missiles the enemy will have in the air at one ship before it holds fire. Above 1 only late in a run: see CombatHooks.EnemyKeepsFiring.</summary>
+    internal float EnemySaturation = 1f;
 
     Phase phase = Phase.Idle;
     double runStart, lastTick, lastSteer;
@@ -84,6 +86,13 @@ public class Director : MonoBehaviour
     int openingStep, pulseInCycle;
     bool breatherTaken;
     readonly List<ObjectBase> openingUnits = new List<ObjectBase>();
+    bool finaleStarted;
+    int raidsSent;
+    /// <summary>Stand-off aircraft: told where the fleet is on each alert, for without it they may never fire from that far out.</summary>
+    readonly HashSet<ObjectBase> raiders = new HashSet<ObjectBase>();
+    /// <summary>The last stretch of the run: no relaxing, no breathers, everything the enemy has left. See <see cref="FinalAssault"/>.</summary>
+    bool InFinale => phase == Phase.Running && Elapsed >= Script.RunSeconds - Script.FinaleSeconds;
+    float SecondsLeft => Script.RunSeconds - Elapsed;
 
     /// <summary>What the director has out, and what each cost in danger: kills pay that back into the ramp.</summary>
     readonly List<(ObjectBase unit, double spawnedAt, int danger)> spawned = new List<(ObjectBase, double, int)>();
@@ -115,7 +124,7 @@ public class Director : MonoBehaviour
         var player = Flagship();
         if (player == null) return;
         Reset();
-        Run.Current = new Run(player) { Counts = counts };
+        Run.Current = new Run(player) { Counts = counts, AreaId = Launcher.IsLaunchedMission() ? Launcher.Current.Area.Id : null };
         // Ships the mission starts with beside the flagship are fleet from the first second.
         foreach (var ship in Singleton<ObjectsManager>.Instance._listOfAllPlayerVesselObjects)
             if (ship != null && ship != player && !ship.IsDestroyed) Run.Current.Fleet.Add(ship);
@@ -124,6 +133,11 @@ public class Director : MonoBehaviour
         if (Launcher.IsLaunchedMission() && Launcher.Current.Ships.Count + Launcher.Current.Flights.Count > 0) Run.Current.EscortChosen = true;
         if (Launcher.IsLaunchedMission())
         {
+            // Names for the high score; the Greek ensign's five copies read as one line, and a flight as the pairs it flies.
+            Run.Current.StartingEscorts = Launcher.Current.Ships.Concat(EnsignCombat.StartingFlights(Run.Current, Launcher.Current))
+                .GroupBy(e => e)
+                .Select(g => g.Key.Name + Ensigns.Times(g.Count() * Ensigns.AircraftFactor(Run.Current.Hoisted, g.Key)))
+                .ToList();
             int copy = 0;
             foreach (var flight in EnsignCombat.StartingFlights(Run.Current, Launcher.Current))
             {
@@ -139,6 +153,9 @@ public class Director : MonoBehaviour
         nextPulse = peakFadeUntil = relaxUntil = nextOpening = 0.0;
         openingStep = pulseInCycle = 0;
         breatherTaken = false;
+        finaleStarted = false;
+        raidsSent = 0;
+        raiders.Clear();
         openingUnits.Clear();
         pressure.Reset();
         lastEdgeNm = 0f;
@@ -199,6 +216,17 @@ public class Director : MonoBehaviour
         int xp = Mathf.FloorToInt(run.Xp);
         Profile.Current.Deposit(xp);
         TestPanel.Report($"{xp} XP banked; {Profile.Current.Bank} XP to spend");
+        if (run.AreaId != null)
+        {
+            bool best = Profile.Current.RecordScore(run.AreaId, new HighScore
+            {
+                Score = run.FinalScore,
+                Flagship = run.FlagshipType,
+                Escorts = run.StartingEscorts,
+                Ensigns = run.Hoisted.Select(e => e.Name).ToList(),
+            });
+            TestPanel.Report($"Score: {run.FinalScore:N0}{(best ? ", a new high score here" : "")}");
+        }
     }
 
     void Reset()
@@ -213,6 +241,9 @@ public class Director : MonoBehaviour
         setPieces.Clear();
         standOff.Clear();
         disarmed.Clear();
+        raiders.Clear();
+        EnemySaturation = 1f;
+        DamageLog.Finish();
         Run.Current = null;
         CombatHooks.Reset();
         Abilities.Reset();
@@ -245,6 +276,7 @@ public class Director : MonoBehaviour
         lastTick = Now;
 
         var run = Run.Current;
+        run.Score = Progression.MissionScore();
         if ((run.Ship == null || run.Ship.IsDestroyed) && run.FlagTransfers > 0)
         {
             // The shop's Flag transfer: the largest escort ship afloat takes the flag.
@@ -304,6 +336,7 @@ public class Director : MonoBehaviour
         PayBosses();
         Escorts.Tend(Run.Current);
         Mortars.Tick(Run.Current);
+        DamageLog.Tick(Run.Current);
         EnsignCombat.Tick(Run.Current, TickSeconds);
         Spawner.MarkHostiles();
         Clutter.SweepWakes();
@@ -321,6 +354,15 @@ public class Director : MonoBehaviour
             }
             // Held beyond the horizon, it needs telling where the fleet is to keep firing.
             else if (alert) Spawner.Alert(unit, player);
+        }
+        raiders.RemoveWhere(u => u == null || u.IsDestroyed);
+        if (alert)
+        {
+            // Everything in the final assault fires as soon as it can, not when its own radar finds the fleet.
+            foreach (var unit in raiders) Spawner.Alert(unit, player);
+            if (InFinale)
+                foreach (var (unit, _, _) in spawned)
+                    if (!standOff.ContainsKey(unit) && !raiders.Contains(unit)) Spawner.Alert(unit, player);
         }
 
         if (Now - lastSteer >= SteerSeconds)
@@ -346,9 +388,19 @@ public class Director : MonoBehaviour
         pendingMissiles = afloat.Where(u => OutOfFiringRange(u, run)).Sum(MissilesCommitted);
         CombatHooks.LogEnemyLaunches(player);
         float closestEnemy = afloat.Where(u => !u.IsAirUnit).Select(u => (float)u._geoPosition.getDistanceInMiles(player._geoPosition)).DefaultIfEmpty(float.PositiveInfinity).Min();
-        pressure.Tick(run, Elapsed, defence, committed, pendingMissiles, closestEnemy);
+        bool finale = InFinale;
+        if (finale && !finaleStarted)
+        {
+            finaleStarted = true;
+            nextPulse = Now;
+            peakFadeUntil = 0.0;
+            TestPanel.Report("Final assault: the enemy is throwing in everything it has left");
+        }
+        EnemySaturation = finale ? float.PositiveInfinity
+            : Mathf.Lerp(1f, Script.SaturationLate, Mathf.InverseLerp(Script.SaturationFromSeconds, Script.RunSeconds - Script.FinaleSeconds, Elapsed));
+        pressure.Tick(run, Elapsed, defence, committed, pendingMissiles, closestEnemy, finale);
         // An open gate promises the fleet can face those missiles, so the score alone cannot shut them out, but pressure can still cut them back.
-        salvoLimit = Mathf.Max(pressure.SalvoLimit(defence, Elapsed), plan.SalvoFloor(run) * Mathf.Lerp(0.5f, 1f, pressure.Value * 2f));
+        salvoLimit = Mathf.Max(pressure.SalvoLimit(defence, Elapsed), plan.SalvoFloor(run, finale) * Mathf.Lerp(0.5f, 1f, pressure.Value * 2f));
         int minuteIndex = Mathf.Min((int)(Elapsed / Script.PhaseSeconds), table.Length - 1);
         var minute = table[minuteIndex];
         if (minuteIndex != minuteStarted)
@@ -365,7 +417,71 @@ public class Director : MonoBehaviour
         }
         setPieces.Tick(player, run, ChestTier, Adopt);
 
+        SendRaids(player, run);
         Ramp(player, run);
+    }
+
+    /// <summary>
+    /// The stand-off raids, on the clock and at the distance that lands their
+    /// missiles in the last two minutes. They come early because the missiles
+    /// take minutes to arrive, and they cost no budget. A fleet whose gates are
+    /// too far shut even with the final assault's easing gets none.
+    /// </summary>
+    void SendRaids(ObjectBase player, Run run)
+    {
+        if (raidsSent >= Script.RaidSecondsLeft.Length || SecondsLeft > Script.RaidSecondsLeft[raidsSent]) return;
+        // Taken in turn, so the two raids differ where the plan has more than one kind.
+        var raids = plan.Raids.Skip(raidsSent % plan.Raids.Length).Concat(plan.Raids.Take(raidsSent % plan.Raids.Length));
+        raidsSent++;
+        foreach (var (group, nm, flights) in raids)
+        {
+            if (!plan.Allows(group.Units, run, finale: true)) continue;
+            for (int i = 0; i < flights; i++)
+                foreach (var unit in Send(group, player, null, airNm: nm)) raiders.Add(unit);
+            TestPanel.Report($"{group.Name} inbound");
+            return;
+        }
+        Entry.Log.LogInfo($"No stand-off raid at {Clock(Elapsed)}: nothing the fleet's gates allow");
+    }
+
+    /// <summary>
+    /// The last three minutes. Waves every 20 seconds with no relaxing, drawn
+    /// from everything the plan has, on bearings all round the fleet, and placed
+    /// close enough to arrive before the clock runs out. It stops spawning near
+    /// the end, since nothing could reach the fleet in time.
+    /// </summary>
+    void FinalAssault(ObjectBase player, Run run)
+    {
+        if (Now < nextPulse || SecondsLeft < Script.FinaleLastSpawnSeconds) return;
+        nextPulse = Now + Script.FinalePulseSeconds;
+        float budget = plan.BudgetAt(Script.RunSeconds) * Script.FinaleBudgetShare * ThreatMultiplier;
+        float cap = budget * WalletPulses;
+        wallet = Mathf.Min(wallet + budget, cap);
+        var bought = Buy(plan.FinaleMenu, cap, player, run);
+        Entry.Log.LogInfo($"Final wave at {Clock(Elapsed)}: {(bought.Count > 0 ? string.Join(", ", bought) : "nothing")}; {wallet:F0} credits left, budget {budget:F1}, {spawned.Count} of {Limit:F0} out, missiles {committed} of {salvoLimit:F1}");
+    }
+
+    /// <summary>Spend the wallet on up to a pulse's worth of groups from the menu, the dearer ones oftener. What it bought, by name.</summary>
+    List<string> Buy(IEnumerable<Group> source, float cap, ObjectBase player, Run run)
+    {
+        var bought = new List<string>();
+        var bearings = new List<float>();
+        for (int i = 0; i < MaxGroupsPerPulse; i++)
+        {
+            int room = Room;
+            var menu = source.Where(g => g.Units.Length <= room && plan.Cost(g) <= cap && MayCome(g, run)).ToList();
+            if (menu.Count == 0) break;
+            // Dearer groups come more often, so the danger rises as the budget does. One it cannot
+            // yet pay for is saved up for, or missile boats would never beat the cheap gun boats to it.
+            var group = PickByCost(menu);
+            int cost = plan.Cost(group);
+            if (cost > wallet) break;
+            wallet -= cost;
+            Send(group, player, null, wave: bearings);
+            committed += group.SalvoAt(lastEdgeNm);
+            bought.Add(group.Name);
+        }
+        return bought;
     }
 
     /// <summary>
@@ -375,6 +491,11 @@ public class Director : MonoBehaviour
     /// </summary>
     void Ramp(ObjectBase player, Run run)
     {
+        if (InFinale)
+        {
+            FinalAssault(player, run);
+            return;
+        }
         if (pressure.Breather)
         {
             if (!breatherTaken) adjust = Mathf.Clamp(adjust - BreatherAdjust, AdjustMin, AdjustMax);
@@ -425,23 +546,7 @@ public class Director : MonoBehaviour
         float cap = budget * WalletPulses;
         wallet = Mathf.Min(wallet + budget * PulseShare[pulseInCycle], cap);
 
-        var bought = new List<string>();
-        var bearings = new List<float>();
-        for (int i = 0; i < MaxGroupsPerPulse; i++)
-        {
-            int room = Room;
-            var menu = plan.StageAt(Elapsed).Where(g => g.Units.Length <= room && plan.Cost(g) <= cap && MayCome(g, run)).ToList();
-            if (menu.Count == 0) break;
-            // Dearer groups come more often, so the danger rises as the budget does. One it cannot
-            // yet pay for is saved up for, or missile boats would never beat the cheap gun boats to it.
-            var group = PickByCost(menu);
-            int cost = plan.Cost(group);
-            if (cost > wallet) break;
-            wallet -= cost;
-            Send(group, player, null, wave: bearings);
-            committed += group.SalvoAt(lastEdgeNm);
-            bought.Add(group.Name);
-        }
+        var bought = Buy(plan.StageAt(Elapsed), cap, player, run);
         if (bought.Count > 0)
             Entry.Log.LogInfo($"Wave at {Clock(Elapsed)}: {string.Join(", ", bought)}; {wallet:F0} credits left, budget {budget:F1}, adjust {adjust:F2}, {spawned.Count} of {Limit:F0} out, missiles {committed} of {salvoLimit:F1}");
         else
@@ -469,10 +574,12 @@ public class Director : MonoBehaviour
     /// <summary>The ship's gates, the salvo limit, and the limits on waiting boats and lone bombers.</summary>
     bool MayCome(Group group, Run run)
     {
-        if (!plan.Allows(group.Units, run)) return false;
+        bool finale = InFinale;
+        if (!plan.Allows(group.Units, run, finale)) return false;
         if (group.Salvo > 0 && (pressure.Breather || committed + group.SalvoAt(lastEdgeNm) > salvoLimit)) return false;
-        if (group.Waits && spawned.Count(s => Script.IsWaiting(s.unit._obp._objectIniName)) + group.Units.Length > Mathf.Max(MinWaiting, Limit / 3f)) return false;
-        if (group.Domain == Domain.Air && !plan.Open(Gate.A2, run) && spawned.Count(s => s.unit.IsAirUnit) + group.Units.Length > BomberPair) return false;
+        // In the final assault boats that fire only from close in are placed there, so there is nothing to wait for.
+        if (!finale && group.Waits && spawned.Count(s => Script.IsWaiting(s.unit._obp._objectIniName)) + group.Units.Length > Mathf.Max(MinWaiting, Limit / 3f)) return false;
+        if (group.Domain == Domain.Air && !plan.Open(Gate.A2, run, finale) && spawned.Count(s => s.unit.IsAirUnit) + group.Units.Length > (finale ? 2 * BomberPair : BomberPair)) return false;
         return true;
     }
 
@@ -489,7 +596,7 @@ public class Director : MonoBehaviour
         var boss = choice.Pick(run);
         // Decided first: one without missiles comes in as a gun ship, not out at missile range.
         bool armed = boss.Salvo == 0 || boss.Domain == Domain.Air || (!choice.GunsOnly && !pressure.Breather &&
-                                         plan.MissilesAllowed(boss.Units, run) && committed + boss.SalvoAt(lastEdgeNm) <= salvoLimit);
+                                         plan.MissilesAllowed(boss.Units, run, InFinale) && committed + boss.SalvoAt(lastEdgeNm) <= salvoLimit);
         var units = Send(boss, player, $"Mini-boss: {boss.Name}", armed: armed);
         if (armed) committed += boss.SalvoAt(lastEdgeNm);
         else TestPanel.Report($"{boss.Name} comes guns only");
@@ -497,7 +604,15 @@ public class Director : MonoBehaviour
     }
 
     /// <summary>The most units out at this point in the run, set pieces apart. Bosses come regardless, but take up places.</summary>
-    float Limit => Mathf.Max(1f, plan.AliveAt(Elapsed) * ThreatMultiplier);
+    float Limit
+    {
+        get
+        {
+            float alive = plan.AliveAt(Elapsed) * ThreatMultiplier;
+            if (InFinale) alive = Mathf.Max(alive, Mathf.Min(alive * Script.FinaleAliveFactor, Script.FinaleMaxAlive));
+            return Mathf.Max(1f, alive);
+        }
+    }
 
     /// <summary>How many more units may be sent: set pieces have room of their own, and hold back only the overall limit.</summary>
     int Room => Mathf.FloorToInt(Mathf.Min(Limit - spawned.Count, Limit + Script.SetPieceRoom - spawned.Count - setPieces.Count));
@@ -552,7 +667,7 @@ public class Director : MonoBehaviour
         if (run?.Ship == null) return;
         // As with a boss, it comes regardless, but armed only if the salvo limit has room for it.
         int salvo = piece.SalvoAt(lastEdgeNm);
-        bool armed = !pressure.Breather && plan.MissilesAllowed(piece.Hulls.Concat(piece.Escorts), run) && committed + salvo <= salvoLimit;
+        bool armed = !pressure.Breather && plan.MissilesAllowed(piece.Hulls.Concat(piece.Escorts), run, InFinale) && committed + salvo <= salvoLimit;
         if (armed) committed += salvo;
         try { setPieces.Launch(piece, run.Ship, run, armed ? Defence.Score(run) : 0f); }
         catch (Exception e) { Entry.Log.LogError($"Set piece {piece.Name} failed: {e}"); }
@@ -581,10 +696,11 @@ public class Director : MonoBehaviour
     }
 
     /// <param name="wave">Bearings the wave's groups have taken so far; null outside a wave.</param>
-    List<ObjectBase> Send(Group group, ObjectBase player, string announce, List<float> wave = null, bool armed = true)
+    /// <param name="airNm">How far out aircraft spawn, instead of the group's ring.</param>
+    List<ObjectBase> Send(Group group, ObjectBase player, string announce, List<float> wave = null, bool armed = true, float? airNm = null)
     {
         var made = new List<ObjectBase>();
-        SpawnGroup(group, player, made, wave, armed);
+        SpawnGroup(group, player, made, wave, armed, airNm);
         foreach (var unit in made) spawned.Add((unit, Now, plan.DangerOf(unit._obp._objectIniName)));
         if (announce != null) TestPanel.Report(announce);
         return made;
@@ -612,6 +728,7 @@ public class Director : MonoBehaviour
     {
         phase = Phase.Won;
         var run = Run.Current;
+        run.Won = true;
         TestPanel.Report($"Survived {Clock(Script.RunSeconds)}! Level {run.Level}, {run.Kills} kills, {run.Intercepts} intercepts.");
         // Banked runs only: a test-panel run unlocks nothing, as it banks nothing.
         if (run.Counts)
@@ -623,11 +740,11 @@ public class Director : MonoBehaviour
         if (mission._endMissionTime < 0.0) mission._endMissionTime = Now + 20.0;
     }
 
-    internal void SpawnGroup(Group group, ObjectBase player, List<ObjectBase> into, List<float> wave = null, bool armed = true)
+    internal void SpawnGroup(Group group, ObjectBase player, List<ObjectBase> into, List<float> wave = null, bool armed = true, float? airNm = null)
     {
         if (!group.IsRing)
         {
-            SpawnOnBearing(group, group.Units, player, into, null, wave, armed);
+            SpawnOnBearing(group, group.Units, player, into, null, wave, armed, airNm);
             return;
         }
         // A wall: one unit on each bearing, evenly round the compass, or for
@@ -644,12 +761,20 @@ public class Director : MonoBehaviour
             SpawnOnBearing(group, new[] { group.Units[i] }, player, into, bearings[i], null, armed);
     }
 
-    void SpawnOnBearing(Group group, string[] types, ObjectBase player, List<ObjectBase> into, float? onBearing, List<float> wave = null, bool armed = true)
+    void SpawnOnBearing(Group group, string[] types, ObjectBase player, List<ObjectBase> into, float? onBearing, List<float> wave = null, bool armed = true, float? airNm = null)
     {
+        bool finale = InFinale;
         float distance = UnityEngine.Random.Range(group.MinNm, group.MaxNm);
+        if (group.Domain == Domain.Air)
+        {
+            // A raid's own release point, or in the final assault close enough to arrive before the end.
+            if (airNm is float nm) distance = nm;
+            else if (finale) distance = Mathf.Clamp(distance, Script.FinaleMinAirNm, Mathf.Max(Script.FinaleMinAirNm, (SecondsLeft - 20f) / 60f * Script.StrikerNmPerMinute));
+        }
         float bearing = onBearing ?? (group.Domain == Domain.Surface
             ? Sea.ShipBearing(player._geoPosition, ref distance, wave, Script.WaveSpreadDeg)
             : Sea.AirBearing(player._geoPosition));
+        if (group.Domain == Domain.Air) KeepClearOfFleet(group, player, types.Length, ref bearing, ref distance);
         var centre = Spawner.Offset(player._geoPosition, distance, bearing);
         float heading = (bearing + 180f) % 360f;
         var made = new List<ObjectBase>();
@@ -687,7 +812,9 @@ public class Director : MonoBehaviour
             float knots = made.Min(u => u.MaxForwardSpeedInKnots);
             float strike = made.Select(u => Reach.EnemyStrikeNm(u, player)).Where(r => r > 0f).DefaultIfEmpty(0f).Min();
             string how;
-            if (group.Waits && strike > 0f)
+            // In the final assault a missile has to reach the fleet before the clock runs out, so the ship starts as far out as its flight can be.
+            float maxOut = finale ? Mathf.Clamp((SecondsLeft - 25f) / 60f * Script.MissileNmPerMinute, Script.FinaleMinMissileNm, Script.FinaleMaxMissileNm) : Script.StandOffMaxNm;
+            if (!finale && group.Waits && strike > 0f)
             {
                 distance = edge;
                 how = $", waiting: missiles reach {strike:F1}";
@@ -695,15 +822,15 @@ public class Director : MonoBehaviour
             else if (strike > 0f)
             {
                 // Holding means the fleet is re-revealed to it, so it fires from beyond the horizon.
-                distance = Mathf.Min(strike, Script.StandOffMaxNm) + knots * Script.MissileApproachSeconds / 3600f;
-                float hold = Mathf.Max(Mathf.Min(strike * Script.StandOffShare, Script.StandOffMaxNm), made.Max(Reach.EnemyMinimumNm) + 0.5f);
+                distance = Mathf.Min(strike, maxOut) + knots * Script.MissileApproachSeconds / 3600f;
+                float hold = Mathf.Max(Mathf.Min(strike * Script.StandOffShare, maxOut), made.Max(Reach.EnemyMinimumNm) + 0.5f);
                 holdNm = hold;
                 how = $", holding at {hold:F1} nm (missiles reach {strike:F1})";
             }
             else
             {
                 float guns = made.Min(Reach.EnemyGunReachNm);
-                distance = guns + knots * Script.GunApproachMinutes / 60f;
+                distance = guns + knots * (finale ? Script.FinaleGunApproachMinutes : Script.GunApproachMinutes) / 60f;
                 how = $", guns reach {guns:F1}";
             }
             distance = Mathf.Max(distance, Script.MinSpawnNm);
@@ -714,6 +841,7 @@ public class Director : MonoBehaviour
                 if (onBearing == null) bearing = Sea.ShipBearing(player._geoPosition, ref distance, wave, Script.WaveSpreadDeg);
                 else distance = Mathf.Max(clear, 1f);
             }
+            KeepClearOfFleet(group, player, made.Count, ref bearing, ref distance);
             if (holdNm is float h && h >= distance) holdNm = Mathf.Max(1f, distance - 1f);
             var front = Spawner.Offset(player._geoPosition, distance, bearing);
             for (int i = 0; i < made.Count; i++)
@@ -739,6 +867,18 @@ public class Director : MonoBehaviour
         else foreach (var unit in made) Spawner.Hunt(unit, player);
         into.AddRange(made);
         Entry.Log.LogInfo($"Spawned {group.Name} ({made.Count}/{types.Length}) at {where}, bearing {bearing:F0}, {Clock(Elapsed)}");
+    }
+
+    /// <summary>Every spawn is placed from the flagship; this keeps it off the rest of the fleet too.</summary>
+    static void KeepClearOfFleet(Group group, ObjectBase player, int members, ref float bearing, ref float distance)
+    {
+        var ships = (Run.Current?.Fleet ?? Enumerable.Empty<ObjectBase>()).Append(player)
+            .Where(s => s != null && !s.IsDestroyed && !s.IsAirUnit).Select(s => s._geoPosition).ToList();
+        float wasBearing = bearing, wasDistance = distance;
+        bool clear = Sea.KeepClear(player._geoPosition, ships, members, group.Domain == Domain.Surface, Script.MinSpawnNm, ref bearing, ref distance);
+        if (!clear) Entry.Log.LogWarning($"{group.Name}: nowhere {Script.MinSpawnNm:F0} nm clear of the fleet, using the clearest spot");
+        else if (bearing != wasBearing || distance != wasDistance)
+            Entry.Log.LogInfo($"{group.Name}: moved from {wasDistance:F1} nm, bearing {wasBearing:F0} to {distance:F1} nm, bearing {bearing:F0}, clear of the fleet");
     }
 
     /// <summary>While the mission is held for the start: what it is waiting for, where the status line will be.</summary>

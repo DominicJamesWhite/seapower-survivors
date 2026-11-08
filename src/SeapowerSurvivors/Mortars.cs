@@ -23,7 +23,8 @@ namespace SeapowerSurvivors;
 /// </list>
 /// Launches go through the game's own engage tasks, so arcs, alignment and
 /// reloads are the launcher's as usual. Mortars still answer torpedoes the
-/// way the game has them do.
+/// way the game has them do. Without an upgrade they are not fired at ships
+/// at all: see <see cref="AiLeavesMortarsAlone"/>.
 /// </summary>
 static class Mortars
 {
@@ -42,8 +43,9 @@ static class Mortars
 
     static double nextCheck, nextSpot;
 
-    /// <summary>Mortars are under this fire control once the line is taken, or from the start under the St Andrew's flag, whose whole effect they are.</summary>
-    static bool InLine(Run run) => run != null && (run.RankOf(Upgrades.Mortars) > 0 || run.Hoisted.Contains(Ensigns.EmpMortars));
+    /// <summary>Mortars are under this fire control once the line is taken, or from the start under an ensign that improves them: the St Andrew's flag, whose whole effect they are, or the White Ensign's reach.</summary>
+    internal static bool InLine(Run run) => run != null &&
+        (run.RankOf(Upgrades.Mortars) > 0 || run.Hoisted.Contains(Ensigns.EmpMortars) || run.Hoisted.Contains(Ensigns.LongRange));
     static bool InFleet(Run run, ObjectBase o) => o != null && run.Fleet.Contains(o);
     static bool EnemyShip(ObjectBase o) =>
         o != null && !o.IsDestroyed && o is Vessel && o._taskforce == Globals._enemyTaskforce;
@@ -186,10 +188,13 @@ static class Mortars
     }
 
     /// <summary>
-    /// Keeps the game's AI off our mortars against anything but a torpedo:
-    /// <see cref="Engage"/> fires them. Left in, a mortar out-ranging the ship's
-    /// other second-choice weapons would be picked over them, then held at 10 nm,
-    /// and torpedoes that could have fired would not.
+    /// Keeps the game's AI off mortars against surface ships, on both sides, for
+    /// the whole of a run. Left in, any ship with a mortar takes a mortar task on
+    /// a ship inside 10 nm, whatever the mortar's range, and its alignment then
+    /// steers straight at the target to get there: a 3 nm RBU-6000 or a half-mile
+    /// RBU-1000 sends it charging. An upgraded fleet's are fired by
+    /// <see cref="Engage"/>, only at ships already in reach and arc, so it never
+    /// has to close. Submarines and torpedoes are left to the game.
     /// </summary>
     [HarmonyPatch(typeof(AI), nameof(AI.AmmoForTarget))]
     static class AiLeavesMortarsAlone
@@ -198,10 +203,8 @@ static class Mortars
 
         static void Postfix(AI __instance, ObjectBase targetObject, List<string> __result)
         {
-            var run = Run.Current;
-            if (!InLine(run) || __result.Count == 0 || targetObject == null || targetObject.isWeapon()) return;
+            if (Run.Current == null || __result.Count == 0 || !(targetObject is Vessel)) return;
             var ship = AiShip(__instance);
-            if (!InFleet(run, ship)) return;
             __result.RemoveAll(name => ship.getAmmunitionByName(name)?._ap is AmmunitionParameters ap && Boosts.Mortar(ap));
         }
     }

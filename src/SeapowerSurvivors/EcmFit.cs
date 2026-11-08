@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using HarmonyLib;
 using SeaPower;
+using UniRx;
 using UnityEngine;
 
 namespace SeapowerSurvivors;
@@ -110,6 +111,7 @@ static class EcmFit
             fitted[ship] = jammer;
             ours.Add(jammer);
             TestPanel.Report($"{ship.Name.Value}: torpedo launchers refitted as an {SystemName} jammer");
+            ShowCone(ship, jammer);
             return true;
         }
         catch (System.Exception e)
@@ -119,6 +121,34 @@ static class EcmFit
             fitted[ship] = null;
             jammer = null;
             return false;
+        }
+    }
+
+    /// <summary>
+    /// The game gives a unit its jam cone only when its map marker is built, and
+    /// this ship's was built before the refit, so the cone is added here, shown on
+    /// the same terms: selected and jamming. A marker built later finds the jammer itself.
+    /// </summary>
+    static void ShowCone(ObjectBase ship, SensorSystemECM jammer)
+    {
+        try
+        {
+            var marker = Globals._mainGameViewModel?.Map?.MapKnownUnits?.AllUnits?.FirstOrDefault(u => u.Unit?.BaseObject == ship);
+            if (marker == null) return;
+            var cone = new SeapowerUI.JamConeViewModel(jammer, ship.Position);
+            void Sync()
+            {
+                bool show = marker.Selected && jammer.Jams.Value;
+                if (show && !marker.Overlay.Contains(cone)) marker.Overlay.Add(cone);
+                else if (!show) marker.Overlay.Remove(cone);
+            }
+            marker.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(marker.Selected)) Sync(); };
+            jammer.Jams.Subscribe(_ => Sync());
+        }
+        catch (System.Exception e)
+        {
+            // The jammer still works without its cone on the map.
+            Entry.Log.LogError($"Adding the jam cone for {ship.Name.Value} failed: {e}");
         }
     }
 

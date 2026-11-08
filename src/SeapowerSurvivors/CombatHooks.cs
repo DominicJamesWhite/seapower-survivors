@@ -42,6 +42,7 @@ static class CombatHooks
             // A sunk ship's life raft counts as a unit, but sinking it is no feat.
             if (__instance._obp?._objectIniName?.Contains("life_raft") == true) return;
 
+            DamageLog.Sunk(__instance);
             var run = Run.Current;
             float xp = Progression.ForUnit(__instance);
             if (run != null)
@@ -201,6 +202,31 @@ static class CombatHooks
             if (__result || ap == null || targetObject == null || targetObject.isAirTarget() || targetObject is WeaponBase) return;
             if (ap._type == Ammunition.Type.Missile && ap._targetType == Ammunition.Target.AAW && Director.IsDisarmed(____baseObject))
                 __result = true;
+        }
+    }
+
+    /// <summary>
+    /// The game's AI stops engaging a ship once it counts the ship as dealt with:
+    /// the missiles in the air at it add up to its MissilesToSaturate (6 for a
+    /// Sverdlov, 8 for a Kidd), or a salvo fired more than 20 seconds ago is
+    /// still flying, which holds back every ship in the taskforce until the last
+    /// missile is gone. All the enemy is one taskforce, so a single slow Styx
+    /// could silence the sea for two minutes. Late in a run that limit is raised
+    /// (Director.EnemySaturation), and the final assault has none.
+    /// </summary>
+    [HarmonyPatch(typeof(AI), "CheckIfAlreadyHandled")]
+    static class EnemyKeepsFiring
+    {
+        static void Postfix(ObjectBase ____baseObject, ObjectBase __0, ref bool __result)
+        {
+            if (!__result || __0 == null || __0.IsAirUnit || !__0.isUnit() || Run.Current == null) return;
+            float saturation = Director.Instance != null ? Director.Instance.EnemySaturation : 1f;
+            if (saturation <= 1f) return;
+            if (____baseObject == null || ____baseObject._taskforce != Globals._enemyTaskforce || __0._taskforce != Globals._playerTaskforce) return;
+            float inAir = 0f;
+            foreach (var weapon in __0._incomingWeapons)
+                if (weapon is Missile && !weapon.IsDefeatedShot) inAir += weapon._ap._saturationValue;
+            if (inAir < __0.MissilesToSaturateValue * saturation) __result = false;
         }
     }
 

@@ -7,6 +7,36 @@ using UnityEngine;
 
 namespace SeapowerSurvivors;
 
+/// <summary>The best run in an area: its score, and the fleet it started with.</summary>
+sealed class HighScore
+{
+    public int Score;
+    /// <summary>The starting flagship's type.</summary>
+    public string Flagship = "";
+    /// <summary>The starting escorts and flights, as shown: "Gearing FRAM II destroyer ×5".</summary>
+    public List<string> Escorts = new List<string>();
+    public List<string> Ensigns = new List<string>();
+
+    const char ListSeparator = ';';
+
+    internal string Format(string areaId) =>
+        string.Join("|", areaId, Score, Flagship, string.Join(ListSeparator.ToString(), Escorts), string.Join(ListSeparator.ToString(), Ensigns));
+
+    /// <summary>Reads one saved entry. False if it is not whole, so one bad entry cannot lose the profile.</summary>
+    internal static bool Parse(string entry, out string areaId, out HighScore score)
+    {
+        var parts = entry.Split('|');
+        areaId = null;
+        score = null;
+        if (parts.Length != 5 || !int.TryParse(parts[1], out int points)) return false;
+        areaId = parts[0].Trim();
+        score = new HighScore { Score = points, Flagship = parts[2], Escorts = Names(parts[3]), Ensigns = Names(parts[4]) };
+        return true;
+    }
+
+    static List<string> Names(string list) => list.Split(new[] { ListSeparator }, StringSplitOptions.RemoveEmptyEntries).ToList();
+}
+
 /// <summary>
 /// What is kept between runs, after Vampire Survivors' gold: every run's XP
 /// is banked when it ends, and the bank is spent in the store on what a run
@@ -68,6 +98,20 @@ sealed class Profile
         wins.Add(flagshipType);
         Save();
         return Launcher.Flagships.Where(s => Owns(Store.FlagshipId(s))).Except(before).ToList();
+    }
+
+    /// <summary>Each area's best run, by area id.</summary>
+    readonly Dictionary<string, HighScore> scores = new Dictionary<string, HighScore>();
+
+    internal HighScore BestScore(string areaId) => scores.TryGetValue(areaId, out var best) ? best : null;
+
+    /// <summary>Keep this run if it is the area's best. Returns true if it is.</summary>
+    internal bool RecordScore(string areaId, HighScore score)
+    {
+        if (score.Score <= 0 || (scores.TryGetValue(areaId, out var best) && best.Score >= score.Score)) return false;
+        scores[areaId] = score;
+        Save();
+        return true;
     }
 
     internal bool IsAshore(string id) => ashore.Contains(id);
@@ -212,6 +256,7 @@ sealed class Profile
         ashore.Clear();
         hoisted.Clear();
         stations.Clear();
+        scores.Clear();
         StationsTurn = false;
         AreaId = FlagshipType = "";
         Save();
@@ -271,6 +316,10 @@ sealed class Profile
                         foreach (var type in value.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
                             profile.wins.Add(type.Trim());
                         break;
+                    case "Scores":
+                        foreach (var entry in value.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
+                            if (HighScore.Parse(entry, out string area, out var score)) profile.scores[area] = score;
+                        break;
                 }
             }
         }
@@ -295,6 +344,7 @@ sealed class Profile
                 $"Runs={Runs}",
                 $"Owned={string.Join(",", owned.OrderBy(id => id))}",
                 $"Wins={string.Join(",", wins.OrderBy(type => type))}",
+                $"Scores={string.Join(",", scores.OrderBy(s => s.Key).Select(s => s.Value.Format(s.Key)))}",
                 $"Ranks={string.Join(",", ranks.OrderBy(r => r.Key).Select(r => $"{r.Key}:{r.Value}"))}",
                 $"SpentOnRanks={spentOnRanks}",
                 $"Area={AreaId}",

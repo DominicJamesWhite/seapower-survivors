@@ -16,8 +16,9 @@ namespace SeapowerSurvivors;
 /// hits kill, so damage comes too late to steer by, and one missile through can
 /// end the run. So the warning is a close call, not a hit:
 ///
-/// - The salvo limit stays well under the fleet's score (at most 70%), so a
-///   stronger fleet meets larger salvos but keeps a margin for leaks.
+/// - The salvo limit stays under the fleet's score (at most 90%), so a stronger
+///   fleet meets larger salvos but keeps a margin for leaks. The final assault
+///   is the exception: see Finale.
 /// - Pressure climbs only while no enemy missile has come near the fleet, and
 ///   a close call knocks it back before anything has been hit.
 /// - A hit a ship survives, or a ship lost, knocks it back further. If the
@@ -47,10 +48,12 @@ sealed class Pressure
 
     /// <summary>The share of the fleet's score allowed at no pressure, from the run's start to its end.</summary>
     const float EasyShareStart = 0.35f, EasyShareEnd = 0.45f;
-    /// <summary>The same at full pressure. Well below 1: one leak can end the run.</summary>
-    const float HardShareStart = 0.55f, HardShareEnd = 0.7f;
+    /// <summary>The same at full pressure. Below 1: one leak can end the run.</summary>
+    const float HardShareStart = 0.65f, HardShareEnd = 0.9f;
     /// <summary>Most enemy missiles allowed at once, whatever the fleet: more than this costs too many frames.</summary>
     const float MaxSalvo = 24f;
+    /// <summary>The final assault's share and limit, over the fleet's score: only a strong build holds this.</summary>
+    const float FinaleShare = 1.4f, FinaleMaxSalvo = 48f;
 
     float value = Start;
     double lastTick, lastWarning = double.MinValue, breatherUntil = double.MinValue, nextBreather = double.MinValue, nextLog;
@@ -59,7 +62,9 @@ sealed class Pressure
 
     static double Now => GameTime.missionElapsedTime;
 
-    internal bool Breather => Now < breatherUntil;
+    /// <summary>The final assault: no breathers, no easing off for close calls or hits, whatever the fleet's state.</summary>
+    internal bool Finale { get; private set; }
+    internal bool Breather => !Finale && Now < breatherUntil;
     /// <summary>How hard the director is pushing, 0 to 1.</summary>
     internal float Value => value;
     /// <summary>A close call or hit was recent: the fleet is not on top of things, so the ramp does not climb.</summary>
@@ -68,6 +73,7 @@ sealed class Pressure
     internal void Reset()
     {
         value = Start;
+        Finale = false;
         lastTick = nextLog = Now;
         lastWarning = breatherUntil = nextBreather = double.MinValue;
         closeCalls = hits = 0;
@@ -86,7 +92,7 @@ sealed class Pressure
 
     /// <summary>Enemy missiles allowed in the air and on the rails at once.</summary>
     internal float SalvoLimit(float defence, float elapsedSeconds) =>
-        Mathf.Min(defence * Share(elapsedSeconds), MaxSalvo);
+        Finale ? Mathf.Min(defence * FinaleShare, FinaleMaxSalvo) : Mathf.Min(defence * Share(elapsedSeconds), MaxSalvo);
 
     void Warn(float penalty)
     {
@@ -96,7 +102,7 @@ sealed class Pressure
 
     void StartBreather(string why)
     {
-        if (Now < nextBreather) return;
+        if (Finale || Now < nextBreather) return;
         breatherUntil = Now + BreatherSeconds;
         nextBreather = breatherUntil + BreatherCooldownSeconds;
         value = 0f;
@@ -104,8 +110,9 @@ sealed class Pressure
     }
 
     /// <summary>Once a director tick.</summary>
-    internal void Tick(Run run, float elapsedSeconds, float defence, int committed, int pending, float closestEnemyNm)
+    internal void Tick(Run run, float elapsedSeconds, float defence, int committed, int pending, float closestEnemyNm, bool finale)
     {
+        Finale = finale;
         float seconds = (float)(Now - lastTick);
         lastTick = Now;
         if (seconds <= 0f) return;
@@ -117,7 +124,6 @@ sealed class Pressure
             if (Now - lastWarning >= SalvoSeconds)
             {
                 closeCalls++;
-                run.CloseCalls++;
                 Entry.Log.LogInfo($"Close call: enemy missile {closest:F1} nm from the fleet, pressure {Mathf.Max(0f, value - CloseCallPenalty):F2}");
             }
             Warn(CloseCallPenalty);
@@ -148,6 +154,7 @@ sealed class Pressure
             value = Mathf.Min(1f, value + seconds / ClimbSeconds);
         // A wounded flagship stays wounded, so pressure stays down with it: another hit could end the run.
         if (run.Ship != null) value = Mathf.Min(value, Health(run.Ship) / 100f);
+        if (Finale) value = 1f;
 
         if (Now >= nextLog)
         {

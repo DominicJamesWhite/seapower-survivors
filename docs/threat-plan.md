@@ -310,6 +310,53 @@ anti-ship missiles, and not its SAMs in their surface mode. Each
 ship's gates apply to their escorts as well: a Sverdlov with no M gates meets a
 Belknap group guns only. If it later opens M3, the next group may be armed.
 
+## Late-run ramp and the final assault
+
+Built 2026-11-08, not yet played. Every number is a first guess (`Script.cs`, and
+`BudgetHarden` / `AliveHarden` in `Threats.cs`).
+
+Runs were trivial because of three limits, none of them the clock:
+
+- A build with no escorts or fighters never opened a gate. An air-wing Sverdlov
+  saw no aircraft and no missile from the first minute to the last.
+- The game's AI holds fire. `AI.CheckIfAlreadyHandled` counts a ship as dealt with
+  once the missiles in the air at it reach its `MissilesToSaturate`, or once a salvo
+  fired over 20 s ago is still flying. Every enemy shares one taskforce, so one slow
+  Styx could silence the sea for over two minutes.
+- Pressure, health and breathers all pulled the end of a run back down.
+
+What changed:
+
+- **Curves.** Budget rises to ×1.6 and the unit limit to ×1.4 by minute 20, starting
+  at minute 5.
+- **AI saturation** (`CombatHooks.EnemyKeepsFiring`). From minute 8 the enemy may keep
+  firing until it has up to ×2.5 a ship's usual saturation in the air by minute 17.
+  In the final assault there is no limit. The enemy's guns stop waiting too.
+- **Salvo share.** At full pressure the salvo limit now reaches 65–90% of the score.
+
+**The final assault is the last three minutes** (from 17:00), three because a
+sea-skimmer takes that long to arrive, so that the fire lands in the last two.
+
+- A wave every 20 s, no relaxing, drawn from every stage at once and each navy's
+  swarms. It stops spawning 45 s from the end, when nothing could reach the fleet.
+- Gates are one step easier: M1 and A1 open for everyone, and each higher gate opens
+  if the one below it does. A fleet with no missile defence meets only the small
+  boats and bombers.
+- No breathers, and pressure is pinned at 1 whatever hits the fleet. The salvo limit
+  is 1.4× the score, up to 48 missiles, so a stronger fleet is sent more but a weak
+  one is not sent all of it.
+- Units spawn near enough to arrive before the end: missile ships at what their
+  missiles can cover by 20:00, between 8 and 30 nm, aircraft by flying time, gun ships
+  a minute outside their range. Boats that fire from close in are placed close in.
+- **Stand-off raids** launch at 14:00 and 15:30, ahead of the assault, because of the
+  missiles' flight time. They need the A3 gate after easing, and cost no budget.
+  Soviet: Tu-16K with AS-6, then Tu-22M2 with AS-4, released just outside their
+  100 nm minimum range. NATO: B-52G, then A-6E, at 30 nm with Harpoons.
+
+Watch for: whether an upgraded fleet survives (the point is that it should),
+"Final wave at" and "Enemy launch" log lines, and frame rate, since the unit limit
+can reach 40.
+
 ## Open questions
 
 1. **XP without kills.** A small award per pulse survived was the research's answer

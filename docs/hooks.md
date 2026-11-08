@@ -198,14 +198,17 @@ through `Boosts.Apply`; what acts during the fight is in `EnsignCombat`.
 - **Bomb accuracy.** A bomb's aim error comes from the aircraft's `_bombingAccuracy`
   and `_bombingMovingTargetPenalty` (`Bomb.GetAimErrorSigma`), and its scatter from
   the round's `_circularErrorRadius` (`Bomb.GetBallisticScatterSigma`).
-- **Salvos.** `AI.AutoAttackSalvoSize` is 1 for an anti-ship missile, so a postfix
-  doubling it makes two a launch.
 - **EMP.** A `CreateExplosion` prefix replaces the mortar round's blast. Radars get
   `Inoperable`, and the ship is held on weapons hold; `Spawner.Alert` skips it.
 - **CIWS reach.** Round range, then `_maxRangeSq` and `_sigmaFcsMissileMrad` set to
   −1 so it recalculates and refits its hit model. Tracer life is capped at 8 s.
 - **Wire.** `_midCourseCorrection`, `_wireBreakSpeedInKnots`, `_maxWireCount`;
-  `BreakWire()` once `_remainingRangePercent` reaches 50.
+  `BreakWire()` once `_remainingRangePercent` reaches 50. The game only strings a
+  wire from a vessel or submarine, so an air-dropped torpedo never has one.
+- **Jam cone.** `MapUnitViewModel`'s constructor looks once for an offensive jammer,
+  so a jammer fitted later needs its `JamConeViewModel` added to `Overlay` by hand.
+- **Shells near the fleet.** Gun rounds are in `ProjectileManager._activeProjectiles`,
+  not `ObjectsManager._listOfAllWeapons`.
 - **Jamming** (`EcmFit`). `new SensorSystemECM(ship, "AN/ALQ-99", mount)` on a
   dummy mount, as `WeaponBase` makes missile jammers. It is added to `_systems`,
   `_sensorSystems` and `_systemsDictionary`, then `init()`, which fills
@@ -254,6 +257,7 @@ holds a `MemberwiseClone` of it.
 | Mortars | `_launchRangesInUnity.y`, `_maxLaunchRangeInMiles`, `_maxVelocityInKnots`, `_acceleration`, `_initialFlightPhaseDuration` ÷speed, `_acceleration` ×speed², on our clones | The AI will not fire them far: see `Mortars`, which queues `InsertEngageTask` itself, drops them from `AI.AmmoForTarget` and transpiles `CheckIfAlreadyHandled`. `_magazineReloadTime` alone does not reload them faster: prefix `ObjectCodeAnimation.update` and move private `_animationStartTime` back. Postfix `RBU.Launch.takeAction` for the lead and aiming error, once a round as `_flightStage` turns to `TerminalApproach`. Postfix `RBU.TerminalApproach.takeAction` to steer. Both set `_estimatedInterceptTargetPosition` and turn `transform.forward` |
 | Missile / SAM reload | `_vwp._magazineReloadTime`, `_fireRatePerMinute` | Vertical-launch cells only benefit on their next firing |
 | Gun rate of fire | Private `WeaponSystemGun._shellReloadTime`, `_delayBetweenShotsinBurst`, `_burstDelay` (a gun with `_burstCount` > 1 reads only the last two: AK-726, AK-130, Mk 28, ZIF-75); ready-rack reload `_vwp._magazineReloadTime`; shell speed `_muzzleVelocityInUnity` with `_gravity` ×speed² | Computed at spawn. The fire table is cached per ammo name, so boosted shells get their own |
+| Spotting hold | Private `WeaponSystemGun.NeedsSpottingFire`, read by `fire()` on surface fire only | Holds a gun to one shell per time of flight until the solution matures. Answered false for fleet guns from Guns rank 1 |
 | Gun damage | `_ap._power` on our shell clones | Confirm the field name |
 | Deep magazines | `WeaponMagazineSystem._initialAmmoCount[ammo]` plus `increaseAmmunitionCount` | |
 | Ammo refill (pickups) | `WeaponMagazineSystem.RefillAmmo`, `WeaponContainer.RefillAmmo` | Test against preloading launchers |

@@ -22,12 +22,15 @@ public class TestPanel : MonoBehaviour
         ("Osa I", "wp_ptg_osa1"),
         ("Sovremenny", "wp_em_sovremenny"),
         ("Slava", "wp_rkr_slava"),
+        ("Sverdlov", "wp_kr_sverdlov"),
     };
     static readonly (string label, string type)[] NatoShips =
     {
         ("Z-class", "rn_dd_z-class"),
         ("Battle", "rn_dd_battle"),
         ("Knox", "usn_ff_knox"),
+        ("Belknap", "usn_cg_belknap"),
+        ("Iowa", "usn_bb_iowa"),
     };
     static readonly float[] Distances = { 10f, 20f, 25f, 40f };
     static readonly float[] ThreatMultipliers = { 0.5f, 1f, 2f };
@@ -227,6 +230,7 @@ public class TestPanel : MonoBehaviour
         if (GUILayout.Button("Rearm")) Try(() => Rearm(ship));
         if (GUILayout.Button("AA report to log")) Try(() => AaReport.Log(ship));
         if (GUILayout.Button("Log fire control")) Try(FireControlTrace.LogAll);
+        if (GUILayout.Button("Log damage")) Try(() => { Entry.Log.LogInfo(DamageLog.Summary()); Report("Damage summary written to the log"); });
         GUILayout.EndHorizontal();
 
         GUILayout.Space(8f * Hud.Scale);

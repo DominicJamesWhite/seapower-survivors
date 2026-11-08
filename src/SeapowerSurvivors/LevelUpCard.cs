@@ -94,8 +94,9 @@ sealed class LevelUpCard
 
     internal static LevelUpCard For(Run run, Escort escort)
     {
-        string kind = !escort.IsAir ? "Ship" : escort.Count > 1 ? $"{escort.Count} aircraft" : "Aircraft";
-        var card = new LevelUpCard { title = escort.Name, status = $"{kind} · Tier {escort.Tier}" };
+        int multiple = Ensigns.ChestMultiple(run, escort), total = escort.Count * multiple;
+        string kind = escort.IsAir ? (total > 1 ? $"{total} aircraft" : "Aircraft") : (total > 1 ? $"{total} ships" : "Ship");
+        var card = new LevelUpCard { title = escort.Name + Ensigns.Times(multiple), status = $"{kind} · Tier {escort.Tier}" };
         var adds = Escorts.Missing(run, escort);
         var carries = escort.Roles & ~adds;
         if (adds != Role.None)

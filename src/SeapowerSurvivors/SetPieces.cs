@@ -88,7 +88,11 @@ sealed class SetPieces
             return false;
         }
         float reach = Reach.PlayerReachNm(fleet, first);
-        float beyond = UnityEngine.Random.Range(def.MinBeyondNm, def.MaxBeyondNm);
+        // Placed from the flagship, so it also has to be past the furthest escort, with room for its own line abreast.
+        float spread = fleet.Where(s => s != null && !s.IsDestroyed && !s.IsAirUnit)
+            .Max(s => (float)player._geoPosition.getDistanceInMiles(s._geoPosition));
+        float clearOfFleet = spread + Script.MinSpawnNm + (def.Hulls.Length + def.Escorts.Length) / 2f;
+        float beyond = Mathf.Max(UnityEngine.Random.Range(def.MinBeyondNm, def.MaxBeyondNm), clearOfFleet - reach);
 
         bool placed = def.Kind == SetPieceKind.Convoy
             ? PlaceConvoy(piece, first, player, reach + beyond)

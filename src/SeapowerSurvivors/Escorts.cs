@@ -18,8 +18,18 @@ sealed class Escort
     public string Loadout;
     public int Count = 1;
     public float AltitudeFt;
+    /// <summary>Service year and weapons for the Survivors screen, read off the game's data for the fit it joins with. Only the starting escorts are shown there.</summary>
+    public int Year;
+    public string Weapons;
 
     public bool IsAir => Loadout != null;
+
+    public Escort Described(int year, string weapons)
+    {
+        Year = year;
+        Weapons = weapons;
+        return this;
+    }
 
     public Escort(string name, string type, int tier, Role roles)
     {
@@ -54,13 +64,22 @@ static class Escorts
     const float JoinDistanceNm = 1.5f;
     /// <summary>Game time between air resupplies once the Air wing line has it, before its ranks shorten it.</summary>
     internal const float ResupplySeconds = 240f;
+    const string StandOffBomber = "wp_tu-22m2";
+    /// <summary>An AS-4's minimum launch range, as the game gives it, before the Anti-ship line shrinks it.</summary>
+    const float StandOffMinimumNm = 100f;
+    /// <summary>Clear of that minimum by this much, so the target is still outside it when the crew has a solution.</summary>
+    const float StandOffMarginNm = 25f;
+    const float StandOffSearchStepNm = 10f, StandOffSearchNm = 300f, StandOffBearingStep = 15f;
+    /// <summary>An AS-4 will not launch below 10,000 ft, and a Backfire refitted from a Yak would be flying lower.</summary>
+    internal const float StandOffAltitudeFt = 30000f;
+    const float UnityPerNm = 27.559496f;
 
     static readonly Escort[] Us =
     {
-        new Escort("Gearing FRAM II destroyer", "usn_dd_gearing_fram2", 1, Role.Guns),
-        new Escort("Knox frigate", "usn_ff_knox_84", 1, Role.Guns | Role.AntiShip | Role.Ciws),
-        new Escort("Oliver Hazard Perry frigate", "usn_ffg_oliver_hazard_perry", 1, Role.Sams | Role.Guns | Role.AntiShip | Role.Ciws),
-        new Escort("Charles F. Adams destroyer", "usn_ddg_adams_early", 1, Role.Sams | Role.Guns),
+        new Escort("Gearing FRAM II destroyer", "usn_dd_gearing_fram2", 1, Role.Guns).Described(1959, "127 mm · Mk-44"),
+        new Escort("Knox frigate", "usn_ff_knox_84", 1, Role.Guns | Role.AntiShip | Role.Ciws).Described(1983, "Harpoon · 127 mm · Phalanx · ASROC · Mk-46"),
+        new Escort("Oliver Hazard Perry frigate", "usn_ffg_oliver_hazard_perry", 1, Role.Sams | Role.Guns | Role.AntiShip | Role.Ciws).Described(1977, "Harpoon · SM-1MR · 76 mm · Phalanx · Mk-46"),
+        new Escort("Charles F. Adams destroyer", "usn_ddg_adams_early", 1, Role.Sams | Role.Guns).Described(1980, "Harpoon · SM-1MR · 127 mm · ASROC · Mk-46"),
         new Escort("Spruance destroyer", "usn_dd_spruance", 2, Role.Guns | Role.Sams | Role.AntiShip | Role.Ciws),
         new Escort("Kidd destroyer", "usn_ddg_kidd", 2, Role.Sams | Role.Guns | Role.AntiShip | Role.Ciws),
         new Escort("Belknap cruiser", "usn_cg_belknap", 2, Role.Sams | Role.Guns | Role.AntiShip),
@@ -69,9 +88,9 @@ static class Escorts
         new Escort("Virginia cruiser", "usn_cgn_virginia", 3, Role.Sams | Role.Guns | Role.AntiShip | Role.Ciws),
         new Escort("Long Beach cruiser", "usn_cgn_long_beach_83", 3, Role.Sams | Role.Guns | Role.AntiShip | Role.Ciws),
         new Escort("Iowa battleship", "usn_bb_iowa", 3, Role.Guns | Role.AntiShip | Role.Ciws),
-        Escort.Flight("F-4J Phantom CAP pair", "usn_f-4j", 1, Role.AirCover, "AirToAir", 2, 20000f),
-        Escort.Flight("A-7E Corsair strike pair", "usn_a-7e", 1, Role.AirStrike, "Strike", 2, 10000f),
-        Escort.Flight("E-2C Hawkeye AWACS", "usn_e-2c", 2, Role.Awacs, "AEW", 1, 25000f),
+        Escort.Flight("F-4J Phantom CAP pair", "usn_f-4j", 1, Role.AirCover, "AirToAir", 2, 20000f).Described(1966, "Sparrow · Sidewinder"),
+        Escort.Flight("A-7E Corsair strike pair", "usn_a-7e", 1, Role.AirStrike, "Strike", 2, 10000f).Described(1969, "Mk-82 · Sidewinder · 20 mm"),
+        Escort.Flight("E-2C Hawkeye AWACS", "usn_e-2c", 2, Role.Awacs, "AEW", 1, 25000f).Described(1973, "Unarmed"),
         Escort.Flight("F-14A Tomcat CAP pair", "usn_f-14a", 2, Role.AirCover, "AirToAir", 2, 25000f),
         Escort.Flight("A-6E Intruder Harpoon pair", "usn_a-6e", 2, Role.AirStrike, "AntiShip", 2, 10000f),
         Escort.Flight("F-14A Tomcat Phoenix flight", "usn_f-14a", 3, Role.AirCover, "AirToAirLongRange", 4, 30000f),
@@ -81,10 +100,10 @@ static class Escorts
 
     static readonly Escort[] Soviet =
     {
-        new Escort("Petya II light frigate", "wp_skr_petya2", 1, Role.Guns),
-        new Escort("Krivak I frigate", "wp_skr_krivak1", 1, Role.Sams | Role.Guns),
-        new Escort("Kashin destroyer", "wp_bpk_kashin_mod", 1, Role.Sams | Role.Guns | Role.AntiShip),
-        new Escort("Kanin destroyer", "wp_bpk_kanin", 1, Role.Sams | Role.Guns),
+        new Escort("Petya II light frigate", "wp_skr_petya2", 1, Role.Guns).Described(1964, "76 mm · RBU-6000 · SET-40"),
+        new Escort("Krivak I frigate", "wp_skr_krivak1", 1, Role.Sams | Role.Guns).Described(1970, "SA-N-4 · 76 mm · SS-N-14 · RBU-6000 · SET-65"),
+        new Escort("Kashin destroyer", "wp_bpk_kashin_mod", 1, Role.Sams | Role.Guns | Role.AntiShip).Described(1964, "SS-N-2 · SA-N-1 · 76 mm · AK-630 · RBU-6000 · SET-65"),
+        new Escort("Kanin destroyer", "wp_bpk_kanin", 1, Role.Sams | Role.Guns).Described(1960, "SA-N-1 · 57 mm · AK-230 · RBU-6000 · SET-65"),
         new Escort("Kynda cruiser", "wp_rkr_kynda", 2, Role.Sams | Role.Guns | Role.AntiShip),
         new Escort("Kresta I cruiser", "wp_rkr_kresta1", 2, Role.Sams | Role.Guns | Role.AntiShip),
         new Escort("Sovremenny destroyer", "wp_em_sovremenny", 2, Role.Sams | Role.Guns | Role.AntiShip | Role.Ciws),
@@ -93,9 +112,9 @@ static class Escorts
         new Escort("Slava cruiser", "wp_rkr_slava", 3, Role.Sams | Role.Guns | Role.AntiShip | Role.Ciws),
         new Escort("Kirov battlecruiser", "wp_rkr_kirov", 3, Role.Sams | Role.Guns | Role.AntiShip | Role.Ciws),
         new Escort("Sverdlov cruiser", "wp_kr_sverdlov", 3, Role.Guns | Role.Ciws),
-        Escort.Flight("MiG-23MS CAP pair", "wp_mig-23ms", 1, Role.AirCover, "AirToAir", 2, 20000f),
-        Escort.Flight("Yak-38 strike pair", "wp_yak-38", 1, Role.AirStrike, "AntiShip", 2, 5000f),
-        Escort.Flight("Tu-95RT Bear-D scout", "wp_tu-95rt", 2, Role.Awacs, "Recon", 1, 30000f),
+        Escort.Flight("MiG-23MS CAP pair", "wp_mig-23ms", 1, Role.AirCover, "AirToAir", 2, 20000f).Described(1973, "AA-2 · 23 mm"),
+        Escort.Flight("Yak-38 strike pair", "wp_yak-38", 1, Role.AirStrike, "AntiShip", 2, 5000f).Described(1976, "FAB-500"),
+        Escort.Flight("Tu-95RT Bear-D scout", "wp_tu-95rt", 2, Role.Awacs, "Recon", 1, 30000f).Described(1963, "23 mm"),
         Escort.Flight("MiG-23MLD CAP pair", "wp_mig-23mld", 2, Role.AirCover, "AirToAir", 2, 25000f),
         Escort.Flight("Su-24A strike pair", "wp_su-24a", 2, Role.AirStrike, "AntiShip", 2, 8000f),
         Escort.Flight("MiG-25PD interceptor flight", "wp_mig-25pd", 3, Role.AirCover, "AirToAirLongRange", 4, 35000f),
@@ -234,10 +253,14 @@ static class Escorts
         var flagship = run.Ship;
         float heading = flagship.transform.eulerAngles.y;
         int joined = 0, stores = 0;
-        for (int i = 0; i < escort.Count; i++)
+        // The Australian ensign: every flight, from the start or a card, has twice the aircraft.
+        int count = escort.Count * Ensigns.AircraftFactor(run.Hoisted, escort);
+        for (int i = 0; i < count; i++)
         {
             // Abreast, a mile apart, off the flagship's starboard beam.
-            var at = Spawner.Offset(flagship._geoPosition, JoinDistanceNm + i + copy * escort.Count, (heading + 90f) % 360f);
+            var at = StandsOff(escort.Type)
+                ? StandOffPosition(run, i + copy * count)
+                : Spawner.Offset(flagship._geoPosition, JoinDistanceNm + i + copy * count, (heading + 90f) % 360f);
             var aircraft = Spawner.Aircraft(escort.Type, "Squadron1", escort.Loadout, at, escort.AltitudeFt, heading, Globals._playerTaskforce);
             if (aircraft == null) continue;
             aircraft._unlimitedFuel = true;
@@ -255,7 +278,47 @@ static class Escorts
         // Fighters are what reach stand-off bombers, so their raids may now come.
         if ((escort.Roles & Role.AirCover) != 0) run.Has.Add(Capability.AirCover);
         Boosts.ApplyFleet(run);
-        TestPanel.Report($"{escort.Name} joins the fleet ({joined}/{escort.Count} aircraft, {stores} stores)");
+        TestPanel.Report($"{escort.Name} joins the fleet ({joined}/{count} aircraft, {stores} stores)");
+    }
+
+    /// <summary>True for an aircraft whose missiles cannot be fired from anywhere near the fleet.</summary>
+    internal static bool StandsOff(string type) => type == StandOffBomber;
+
+    /// <summary>
+    /// Where a stand-off bomber joins: outside its missiles' minimum range of
+    /// every enemy ship, and of the flagship, since new enemies appear around
+    /// it. The nearest such ring, and on it the bearing closest to an enemy,
+    /// so the first shot comes soon. With no enemy afloat, astern of the fleet.
+    /// </summary>
+    /// <param name="slot">Which aircraft of the group this is: they fly abreast, a mile apart.</param>
+    internal static GeoPosition StandOffPosition(Run run, int slot)
+    {
+        var flagship = run.Ship;
+        float clearNm = StandOffMinimumNm / (Upgrades.Total(run, Upgrades.AntiShip, Stat.Range) * Ensigns.MissileReach) + StandOffMarginNm;
+        var enemies = Singleton<ObjectsManager>.Instance._listOfAllNonPlayerVesselObjects
+            .Where(v => v != null && !v.IsDestroyed).Select(v => v._geoPosition).ToList();
+        float astern = flagship.transform.eulerAngles.y + 180f;
+
+        float NearestNm(GeoPosition at) =>
+            enemies.Count == 0 ? float.MaxValue : enemies.Min(e => (float)at.GetDistance(e) / UnityPerNm);
+
+        float chosen = astern, range = clearNm + StandOffSearchNm;
+        bool found = false;
+        for (float distance = clearNm; !found && distance <= clearNm + StandOffSearchNm; distance += StandOffSearchStepNm)
+        {
+            float closest = float.MaxValue;
+            for (float offset = 0f; offset < 360f; offset += StandOffBearingStep)
+            {
+                float bearing = (astern + offset) % 360f;
+                float nearest = NearestNm(Spawner.Offset(flagship._geoPosition, distance, bearing));
+                if (nearest < clearNm || nearest >= closest) continue;
+                closest = nearest;
+                chosen = bearing;
+                range = distance;
+                found = true;
+            }
+        }
+        return Spawner.Offset(Spawner.Offset(flagship._geoPosition, range, chosen), 1f + slot, (chosen + 90f) % 360f);
     }
 
     internal static void Tend(Run run)

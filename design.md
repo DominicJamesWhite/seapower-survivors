@@ -192,22 +192,22 @@ the end of the status panel; hovering one shows what it does.
 | Ensign | Effect | Points |
 | --- | --- | --- |
 | White Ensign | Guns, missiles, torpedoes and mortars reach ×3 | 8 |
-| Stars and Stripes | Guns +300% damage, firing half as fast (net ×2 damage per second) | 5 |
-| Icelandic Coast Guard Ensign | Guns do up to ×3 damage to ships, falling evenly to ×1 at the gun's greatest range | 5 |
+| Stars and Stripes | Guns ×4 damage, firing half as fast (net ×2 damage per second) | 5 |
+| Icelandic Coast Guard Ensign | Guns do up to ×6 damage to ships, falling evenly to ×1 at the gun's greatest range | 5 |
 | Soviet Naval Ensign | All missiles ×2 damage | 7 |
-| Indian Naval Ensign | Anti-ship salvos twice the size: the AI's usual one missile a launch becomes two | 5 |
+| Indian Naval Ensign | Anti-ship missiles ×2 speed | 5 |
 | Dutch Tricolour | CIWS range ×100; guns aim 4× as well and fire and reload 2× as fast; SAMs and air-to-air missiles disabled | 8 |
 | St Andrew's Flag | Mortars are EMPs: radars and fire control go dark, 2 nm and 60 s at rank 0, up to 6 nm and 3 min at rank 20; Sovremenny, Slava, Kirov and Kiev only | 5 |
 | Italian Naval Ensign | Torpedoes ×3 speed, turn and range, ×1.5 damage; can target ships | 5 |
 | Swedish Naval Ensign | Torpedoes wire-guided for half their range at full speed; can target ships | 3 |
 | German Naval Ensign | Ships with tubes carry the EA-6B's ALQ-99 jammer, aimed by the player; torpedo cards become jammer cards | 6 |
-| Australian White Ensign | Starting flights double, or a free fighter pair | 4 |
+| Australian White Ensign | Every flight, from the start or a chest, has twice the aircraft | 4 |
 | Estonian Naval Ensign | Own aircraft RCS −95% | 3 |
 | Argentine Ensign | Unguided bombs ×10 damage and 10× closer; strike aircraft carry only those, at RCS ×0.25; a free strike pair | 6 |
 | Greek Ensign | First ship or flight comes as five, and is the only escort; chests then hold only level-ups | 7 |
 | New Zealand White Ensign | Each ship or flight from a chest comes as two | 6 |
 | Turkish Naval Ensign | The flagship ignores one missile, bomb or torpedo, and one more every 5 levels; shells do not spend a charge, and a near miss that would harm it does | 7 |
-| Dannebrog | Each close call adds 10% to all damage for the rest of the run | 4 |
+| Dannebrog | Any enemy weapon within 3 nm of a ship of ours, gun rounds included, adds 20% to all damage for the rest of the run, at most once per 10 s | 4 |
 | Norwegian Ensign | Cards at least Rare | 10 |
 | Irish Tricolour | A fourth card at every level-up, +3 rerolls, +3 banishes | 5 |
 | Spanish Ensign | Four free cards at the start | 4 |
@@ -219,7 +219,8 @@ the end of the status panel; hovering one shows what it does.
   and only its SAMs are withheld, so a Perry keeps its Harpoons.
 - Mortars come under the mod's fire control from the start under the St Andrew's
   flag, at their stock reach until range cards extend it.
-- Turkish charges and the Dannebrog's close calls show as a count on the flag.
+- Turkish charges and the Dannebrog's close calls show as a count on the flag, and
+  the flag's hover panel gives the Dannebrog's current bonus.
 - Damage factors are applied where a warhead's damage is worked out, not written
   into the rounds, so card previews do not show them.
 - The numbers above are first guesses and none has been played.
@@ -227,9 +228,10 @@ the end of the status panel; hovering one shows what it does.
   drop the damage rank's text, as there is no warhead to improve. Range ranks
   work as usual.
 - Under the Argentine ensign, chests offer A-6Es, Hornets and Su-24s on their
-  own bomb loadouts and do not offer Tu-22M2s, which have none. Air wing refit
-  ranks say that flights keep their bombs. A Kiev's deck aircraft are the player's
-  to load, so they can still carry guided weapons.
+  own bomb loadouts and do not offer Tu-22M2s, which have none. The Air wing
+  line has its own path under this ensign, with no refits (see Air wing, below).
+  A Kiev's deck aircraft are the player's to load, so they can still carry guided
+  weapons.
 - The Jammers line replaces Torpedoes under the German ensign, 20 ranks: reach
   30 to 135 nm, arc 30° to 270°, jam chance 0.45 to 1.35. Its abilities are High
   power (200 kW), Second look (a resisting missile is retried every 10 s), Hard
@@ -293,8 +295,7 @@ are never boosted.
   never a side effect of a stat.
 - **A little beyond realistic:** each line at its last rank is set against
   the best real successor to the 1985 weapon it boosts, then pushed
-  somewhat past it (a Mk 75's 80 rounds a minute against the Mk 110 57 mm's
-  220). That end state is spread evenly over the line's stat ranks: a
+  somewhat past it (a Harpoon's Mach 0.85 against BrahMos's 2.8). That end state is spread evenly over the line's stat ranks: a
   factor f over k ranks is f^(1/k) a rank. This also keeps shell counts
   sane: a gun fires at most one salvo a frame, and a rate of fire past that
   only fills the air with shells the game must move.
@@ -362,14 +363,15 @@ Ability ranks in bold; the path repeats its stats within each tier.
 
 | Upgrade | Ranks | Stat ranks | Abilities (ranks 5, 10, 15, 20) | At the last rank | Set against |
 |---|---|---|---|---|---|
-| Guns | 15 | Damage ×1.265 (6), rate of fire ×1.183 (6) | **Anti-air fire**, **Wide bursts** (flak burst radius ×2), **Heavy shells** (damage ×2 again) | Damage ×4.1 then ×2, rate of fire ×2.75, shells ×1.4 as fast; flak bursts within 30 m on a 100 mm | Mk 75 80 rpm → Mk 110 57 mm 220 rpm; 76 mm → 127 mm HE |
+| Guns | 15 | Every rank raises every stat. Ranks 1–2: aiming ÷2.45, shell power +50, rate of fire ×1.2, reload ÷1.2, shell speed ×1.4, range ×1.06. Ranks 3–4: aiming ÷1.11, shell power +12, rate of fire ×1.05, reload ÷1.05, shell speed ×1.08, range ×1.06. The other eight: damage ×1.1, aiming ÷1.1, shell speed ×1.035, range ×1.02 | **Anti-air fire**, **Wide bursts** (flak burst radius ×2), **Heavy shells** (damage ×2 again) | Shell power +124, damage ×2.1 then ×2, aiming ÷15.8, rate of fire ×1.6, ready rack reload ÷1.6 more, range ×1.5, shells ×3 as fast; flak bursts within 30 m on a 100 mm | Rate of fire held down for frame rate; 76 mm → 127 mm HE |
 | Surface-to-air missiles | 20 | Reload ×0.71 (6), hit chance (6), +1 target at once (4) | **Sea-skimmer killers**, **Hypersonic**, **Long reach**, **Huge blasts** | Reload ÷8, hit chance +45 points, +4 targets | Mk 13 arm (~8 s a round) → Mk 41 VLS (~1 s); Aegis illuminator time-sharing |
-| Anti-ship missiles | 20 | Speed ×1.32 (4), evasion (6), damage ×1.32 (4), range ×1.32 and minimum range ÷1.32 (2) | **Smart seekers**, **Wave-top**, **Armoured**, **Ghost** | Damage ×3, speed ×3, range ×1.75, enemy SAMs hit 45% less often | Harpoon Mach 0.85 → BrahMos 2.8; 221 kg → P-700 750 kg |
+| Anti-ship missiles | 20 | Every rank: speed ×1.07, evasion, damage ×1.07, range ×1.04 and minimum range ÷1.04 | **Smart seekers**, **Wave-top**, **Armoured**, **Ghost** | Damage ×3, speed ×3, range ×1.75, enemy SAMs hit 45% less often | Harpoon Mach 0.85 → BrahMos 2.8; 221 kg → P-700 750 kg |
 | Torpedoes | 20 | Front-loaded: speed ×2.5 then ×1.6, range ×3 then ×2 (ranks 1–4); then damage ×1.41 (4), sonar seekers ×1.26 (4), range ×1.1 (4) | **Hunter**, **Sure shot**, **Keel breaker**, **Supercavitating** (speed ×2) | Speed ×4 (×8 supercavitating), range ×8.8, damage ×4, seekers ×2.5 (×5 with Hunter) | Mk 46 → Shkval-fast in three ranks |
-| Rocket mortars | 20 | Reach +10 nm (6), speed ×1.68 (4), reload ×0.5 (3), damage ×1.26 (3) | **Hunting rounds**, **Spotters**, **Deep magazines**, **Bombardment** (reach ×2) | Reach +60 nm (about 125 nm with Bombardment), speed ×8, reload ÷8 (an RBU-6000's 127 s to 16 s), damage ×2, firing at ships on their own | Nothing real: RBU-6000 3 nm, out-ranging a Harpoon on purpose. Soviet hulls only: no US ship in the roster carries one |
+| Rocket mortars | 20 | Every rank: reach +3.75 nm, speed ×1.14, reload ÷1.09, damage ×1.04 | **Hunting rounds**, **Spotters**, **Deep magazines**, **Bombardment** (reach ×2) | Reach +60 nm (about 125 nm with Bombardment), speed ×8, reload ÷4 (an RBU-6000's 127 s to 32 s), damage ×2, firing at ships on their own | Nothing real: RBU-6000 3 nm, out-ranging a Harpoon on purpose. Soviet hulls only: no US ship in the roster carries one |
 | Point defence (CIWS) | 20 | Intercept chance (8), rate of fire ×1.10 (8) | **Heavy rounds**, **Flak rounds**, **Overdrive**, **Flak storm** | Intercept +45 points, rate of fire ×2.2 | Phalanx 3,000 → 4,500 rpm; AK-630 → Duet 10,000 rpm |
 | Countermeasures (chaff) | 20 | Spoof chance (8), reload ×0.82 (7), **decoys can succeed every time** (1, rank 14) | **Quick bloom**, **Burn-out**, **Turncoat**, **Overcharge** | Spoof +40 points, reload ÷4, the game's "three spoofs then a forced failure" rule lifted | Chaff → Nulka active decoy |
-| Air wing | 20 | Bombs and rockets ×1.19 (8, tiers 1–2), resupply ×1.19 as often (8, tiers 3–4) | **Guided weapons refit**, **Air resupply** every 4 min, **New aircraft refit**, **Heavy loadout refit** | Strike flights three rungs up their ladders, pylons rehung every minute, bombs and rockets ×4. Offered once a flight with stores has joined | Mk 82 227 kg → Mk 84 907 kg |
+| Air wing | 20 | Every weapon aircraft fire ×1.19 (8, tiers 1–2), resupply ×1.19 as often (8, tiers 3–4) | **Guided weapons refit**, **Air resupply** every 4 min, **New aircraft refit**, **Heavy loadout refit** | Strike flights three rungs up their ladders, pylons rehung every minute, aircraft weapons ×4, on top of their own lines. Offered once a flight with stores has joined | Mk 82 227 kg → Mk 84 907 kg |
+| Air wing, Argentine ensign | 20 | Bombs and rockets ×1.19 with scatter ÷1.15 (8, tiers 1–2); resupply ×1.19 as often with turn ×1.1 (4, tier 3) or aircraft chaff spoof (4, tier 4) | **Uprated engines** speed ×1.25, **Air resupply**, **Radar-absorbent paint** radar signature ×0.5, **Stripped airframe** speed ×1.2 | Bombs ×4, scatter ÷3.1, speed ×1.5, turn ×1.46, spoof +30 points, on strike aircraft | Nothing real: a Yak-38 at 980 kn is the point |
 
 | Chance | Cap | Rate | Ranks | At the last rank |
 |---|---|---|---|---|
@@ -384,6 +386,9 @@ of its ladder the standard allows, including flights that join later. A
 loadout is built into an aircraft when it is made, so a refit replaces the
 aircraft where it flies (without scoring) and waits only while a weapon it
 guides is flying (a Walleye or Sparrow); a Harpoon flies on without it.
+A Tu-22M2 joins or refits outside its AS-4s' minimum range (100 nm, less the
+Anti-ship line's range ranks, plus 25 nm) of every enemy ship and the flagship,
+at 30,000 ft at least, as an AS-4 will not launch below 10,000.
 
 | Standard | US | US (Hornets) | Soviet | Soviet (Backfires) |
 |---|---|---|---|---|
@@ -449,7 +454,8 @@ gives every gun:
 - proximity fuzes, with a burst radius 3× the shell's own, and at least
   15 m;
 - anti-air fire-control tables, so guns without them can aim upwards, out
-  to 60% of their range;
+  to 60% of their range, and no shell fired past 15 km;
+- a fresh aiming error every second, not every 4–8 s;
 - aircraft as a target, even for guns built only for surface targets.
 
 **Why the burst radius grows, not just the aim.** Traced in game: with
@@ -571,9 +577,12 @@ spends them elsewhere may meet missile waves late. Watch for this in play.
   has, and every level-up rearms it with the rest of the fleet. Aircraft
   weapons go through the same lines: air-to-air missiles on the pylons
   through the SAM line, anti-ship missiles through the anti-ship line,
-  cannon through the gun line. The Air wing line covers the rest: air
-  resupply between level-ups, and bombs and rockets. Kills by anything in
-  the fleet earn XP.
+  cannon through the Guns line as well as Point defence, since the game has
+  every aircraft gun, pods included, as a CIWS. The game fits a CIWS's hit
+  model to its listed kill chance, so an aircraft's guns are fitted on stock
+  numbers or the boost would cancel out. The Air wing line adds air resupply
+  between level-ups and damage on every aircraft weapon, under the Argentine
+  ensign on bombs and rockets alone. Kills by anything in the fleet earn XP.
 - **Losing.** Only the flagship's loss ends the run; reinforcements are
   firepower, not extra lives. The mod ends the mission itself, because the
   mission's own trigger waits for every player ship.

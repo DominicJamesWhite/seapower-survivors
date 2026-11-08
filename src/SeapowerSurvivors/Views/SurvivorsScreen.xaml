@@ -137,15 +137,15 @@
 
         <!-- A flagship or a starting ship: the name and what it is, and its state or price -->
         <DataTemplate x:Key="ShipRow">
-            <Button Style="{StaticResource SelectableRow}" Command="{Binding Command}" Margin="0,0,0,4" Height="44">
+            <Button Style="{StaticResource SelectableRow}" Command="{Binding Command}" Margin="0,0,0,4" MinHeight="44">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <StackPanel Margin="12,0,8,0" VerticalAlignment="Center">
+                    <StackPanel Margin="12,4,8,4" VerticalAlignment="Center">
                         <TextBlock Text="{Binding Name}" Style="{StaticResource Name}"/>
-                        <TextBlock Text="{Binding Detail}" Style="{StaticResource RowNote}" Visibility="{Binding DetailVisibility}"/>
+                        <TextBlock Text="{Binding Detail}" Style="{StaticResource RowNote}" TextWrapping="Wrap" Visibility="{Binding DetailVisibility}"/>
                     </StackPanel>
                     <TextBlock Grid.Column="1" Text="{Binding State}" Style="{StaticResource State}" VerticalAlignment="Center" Margin="0,0,12,0"/>
                 </Grid>
@@ -169,7 +169,7 @@
             </Grid.ColumnDefinitions>
             <StackPanel>
                 <TextBlock Text="SURVIVORS" FontSize="36" Foreground="{DynamicResource Brush.Foreground.Highlight}" Margin="0,17.5,0,0"/>
-                <TextBlock Text="Hold out for 75 minutes of game time against waves of ships and aircraft. Every kill is XP; every level is an upgrade."
+                <TextBlock Text="Select a map, a fleet, your Ensigns, and survive for 20 minutes."
                            FontSize="12" Margin="0,2,0,0"/>
             </StackPanel>
             <StackPanel Grid.Column="1" VerticalAlignment="Bottom" HorizontalAlignment="Right">
@@ -261,10 +261,17 @@
                                                         <GradientStop Color="#D0000000" Offset="1"/>
                                                     </LinearGradientBrush>
                                                 </Border.Background>
-                                                <StackPanel>
-                                                    <TextBlock Text="{Binding Name}" Style="{StaticResource Name}"/>
-                                                    <TextBlock Text="{Binding Region}" FontSize="11" Foreground="{DynamicResource Brush.Foreground.Highlight}" TextTrimming="CharacterEllipsis"/>
-                                                </StackPanel>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Name}" Style="{StaticResource Name}"/>
+                                                        <TextBlock Text="{Binding Region}" FontSize="11" Foreground="{DynamicResource Brush.Foreground.Highlight}" TextTrimming="CharacterEllipsis"/>
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Score}" FontSize="11" Foreground="{DynamicResource Brush.Foreground.Highlight}" VerticalAlignment="Bottom" Margin="8,0,0,0"/>
+                                                </Grid>
                                             </Border>
                                             <!-- The painting would hide a red fill, so a card is selected by a red edge -->
                                             <Border BorderBrush="{DynamicResource Brush.Item.BackgroundSelected}">
@@ -286,7 +293,7 @@
                         </ItemsControl>
                         <TextBlock Text="{Binding AreaName}" FontSize="16" Foreground="{DynamicResource Brush.Foreground.Highlight}" Margin="0,8,0,4"/>
                         <TextBlock Text="{Binding AreaBlurb}" FontSize="12" Foreground="{DynamicResource Brush.Foreground.Highlight}" TextWrapping="Wrap" LineHeight="17"/>
-                        <TextBlock Text="{Binding AreaApproach}" FontSize="12" Foreground="{DynamicResource Brush.Foreground.Emphasis}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                        <TextBlock Text="{Binding AreaRecord}" FontSize="12" Foreground="{DynamicResource Brush.Foreground.Highlight}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                     </StackPanel>
                 </ScrollViewer>
             </Border>
@@ -299,11 +306,11 @@
                         <Border Style="{StaticResource Rule}"/>
                         <ItemsControl ItemsSource="{Binding Flagships}" ItemTemplate="{StaticResource ShipRow}"/>
                         <Grid Margin="0,14,0,4">
-                            <TextBlock Text="Starting ships and flights" Style="{StaticResource Heading}" Margin="0" VerticalAlignment="Bottom"/>
+                            <TextBlock Text="Escorts" Style="{StaticResource Heading}" Margin="0" VerticalAlignment="Bottom"/>
                             <Button Command="{Binding FormationCommand}" Content="FORMATION" MinWidth="120" Height="30" HorizontalAlignment="Right"/>
                         </Grid>
                         <Border Style="{StaticResource Rule}" Margin="0,0,0,8"/>
-                        <TextBlock Text="Bought ones sail with the flagship. Click one to leave it ashore." FontSize="12" Margin="0,0,0,8"/>
+                        <TextBlock Text="Purchased escorts start active. Click one to deselect it." FontSize="12" Margin="0,0,0,8"/>
                         <ItemsControl ItemsSource="{Binding Escorts}" ItemTemplate="{StaticResource ShipRow}"/>
                         <TextBlock Text="{Binding FleetSummary}" FontSize="12" Foreground="{DynamicResource Brush.Foreground.Highlight}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                     </StackPanel>
@@ -392,7 +399,7 @@
             </Border>
         </Grid>
 
-        <!-- Footer: BACK, what happened last, and LAUNCH, in the game's own buttons. The ensign page has only DONE. -->
+        <!-- Footer: BACK, why a launch failed if one did, and LAUNCH, in the game's own buttons. The ensign page has only DONE. -->
         <Grid Grid.Row="2" Margin="0,10">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>

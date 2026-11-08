@@ -39,6 +39,12 @@ enum Stat
     Arc,
     /// <summary>A jammer's chance of spoiling a missile.</summary>
     JamChance,
+    /// <summary>Warhead power added to every shell, before factors, so a small gun gains most.</summary>
+    ShellPower,
+    /// <summary>Aiming error for guns alone, on top of the Accuracy line, which mortars share.</summary>
+    GunAim,
+    /// <summary>How hard an aircraft can turn.</summary>
+    Turn,
 }
 
 /// <summary>An ability, granted by one rank of one line.</summary>
@@ -53,7 +59,7 @@ sealed class Unlock
     }
 }
 
-/// <summary>One rank: one effect, and the text for it, with {0} for the number.</summary>
+/// <summary>One rank: an effect and the text for it, with {0} for the number, and any others a blended rank gives with it.</summary>
 sealed class Step
 {
     public readonly Stat Stat;
@@ -65,6 +71,15 @@ sealed class Step
     /// <summary>An ability rank's name: every fifth rank. Null for a stat rank.</summary>
     public readonly string Name;
     public readonly Unlock Unlock;
+    /// <summary>A blended rank's other effects.</summary>
+    Step[] also = System.Array.Empty<Step>();
+
+    /// <summary>Everything this rank does: itself, and for a blended rank the rest.</summary>
+    public IEnumerable<Step> Effects => new[] { this }.Concat(also);
+
+    /// <summary>One rank that raises several stats at once.</summary>
+    public static Step Blend(Step first, params Step[] rest) =>
+        new Step(first.Stat, first.Value, first.Text, cap: first.Cap) { also = rest };
 
     public Step(Stat stat, float value, string text, string name = null, float cap = 0f, Unlock unlock = null)
     {
@@ -92,7 +107,11 @@ sealed class Upgrade
     /// <summary>The ring's icon: see <see cref="Rings"/>.</summary>
     public string Icon;
     public Kind Kind;
-    public Step[] Path;
+    Step[] path;
+    /// <summary>The ranks of this line, under the ensigns flown.</summary>
+    public Step[] Path { get => Variant?.Invoke() ?? path; set => path = value; }
+    /// <summary>A different path for the ensigns flown, or null for the usual one. Must be as long.</summary>
+    public System.Func<Step[]> Variant;
     /// <summary>The weapon systems this upgrade would boost on one ship; empty for a fleet upgrade.</summary>
     public System.Func<ObjectBase, IEnumerable<WeaponSystem>> Systems;
 
@@ -166,12 +185,20 @@ static class Upgrades
     // over the line's stat ranks: a factor f over k ranks is f^(1/k) a rank.
 
     /// <summary>
-    /// Damage ×4.1 and rate of fire ×2.75 over the path: a 127 mm shell's
-    /// punch, and the Mk 110 57 mm's 220 rounds a minute against the Mk 75's
-    /// 80, then Heavy shells doubles the damage again. Rate of fire also
-    /// takes the ready rack's reload with it, and shell speed by its cube
-    /// root (×1.4). A gun fires at most one salvo an update, so a rate past
-    /// the frame rate only adds shells to the air.
+    /// Shell power +124 and damage ×2.1 over the path, then Heavy shells doubles
+    /// the damage again. Rate of fire stops at ×1.6, in the first four ranks,
+    /// because every shell in the air costs frame rate: past those ranks the
+    /// line grows by damage and aim. Every rank raises several stats together,
+    /// and the line is heavily front-loaded: rank 2 is meant to be about as
+    /// lethal as a stock Harpoon and SM-1 ship (see tools/balance.py). That
+    /// takes aiming, which only guns get here, since hit chance is what holds a
+    /// stock gun back, and flat shell power, because the game divides a shell's
+    /// cut of the hidden pool by up to 10 and a factor would run away on big
+    /// guns: a 406 mm shell starts at 35, a 76 mm at 2.4. After the opening
+    /// each rank's aim stays below an Accuracy rank's.
+    /// Rate of fire also takes the ready rack's reload with it. Shell speed
+    /// is its own stat, ×3 over the path, about a railgun's 2,400 m/s: fewer
+    /// shells in the air at once, and less for a moving target to do in flight.
     /// Anti-air fire makes every gun a flak gun; Wide bursts grows its fuze. A shell
     /// only scores on an aircraft if it bursts within its fuze radius, and in
     /// game the misses come from the target moving while the shell flies,
@@ -181,16 +208,21 @@ static class Upgrades
 
     static Upgrade MakeGuns()
     {
-        var d = new Step(Stat.Damage, 1.265f, "Shells hit {0}× as hard");
-        var f = new Step(Stat.RateOfFire, 1.183f, "Guns fire and reload {0}× as fast, with faster shells");
+        const string Hard = "Shells hit {0}× as hard", Power = "Shell power +{0}", Aim = "Gun aiming error ÷{0}",
+            Fire = "Guns fire {0}× as fast", Quick = "Shells fly {0}× as fast", Refill = "Guns reload {0}× as fast", Far = "Guns reach {0}× as far";
+        var opening = Step.Blend(new Step(Stat.GunAim, 0.408f, Aim), new Step(Stat.ShellPower, 50f, Power), new Step(Stat.RateOfFire, 1.2f, Fire), new Step(Stat.Speed, 1.4f, Quick),
+            new Step(Stat.Reload, 0.833f, Refill), new Step(Stat.Range, 1.06f, Far));
+        var early = Step.Blend(new Step(Stat.GunAim, 0.9f, Aim), new Step(Stat.ShellPower, 12f, Power), new Step(Stat.RateOfFire, 1.05f, Fire), new Step(Stat.Speed, 1.08f, Quick),
+            new Step(Stat.Reload, 0.952f, Refill), new Step(Stat.Range, 1.06f, Far));
+        var late = Step.Blend(new Step(Stat.Damage, 1.1f, Hard), new Step(Stat.GunAim, 0.91f, Aim), new Step(Stat.Speed, 1.035f, Quick), new Step(Stat.Range, 1.02f, Far));
         return new Upgrade
         {
-            Name = "Guns", Short = "Guns", Icon = "gun", Kind = Kind.Weapon, Systems = s => Boosts.Guns(s),
+            Name = "Guns", Short = "Guns", Icon = "gun", Kind = Kind.Weapon, Systems = s => Boosts.Guns(s).Concat<WeaponSystem>(Boosts.AircraftCannons(s)),
             Path = new[]
             {
-                d, f, d, f, new Step(Stat.AntiAir, 3f, "Every gun engages aircraft, with proximity fuzes and AA fire control", "Anti-air fire"),
-                d, f, d, f, new Step(Stat.Fuze, 2f, "Flak bursts reach 2× as far", "Wide bursts"),
-                d, f, d, f, Step.Ability(HeavyShells = new Unlock("Heavy shells", "Shells hit 2× as hard, on top of earlier ranks")),
+                opening, opening, early, early, new Step(Stat.AntiAir, 3f, "Every gun engages aircraft out to 15 km, with proximity fuzes and AA fire control that re-aims every second", "Anti-air fire"),
+                late, late, late, late, new Step(Stat.Fuze, 2f, "Flak bursts reach 2× as far", "Wide bursts"),
+                late, late, late, late, Step.Ability(HeavyShells = new Unlock("Heavy shells", "Shells hit 2× as hard, on top of earlier ranks")),
             },
         };
     }
@@ -235,19 +267,21 @@ static class Upgrades
 
     static Upgrade MakeSams()
     {
-        var r = new Step(Stat.Reload, 0.7071f, "SAM launchers reload {0}× as fast");
-        var h = Step.Chance(Stat.KillChance, 0.3f, 0.7f, "SAM hit chance +{0} points");
+        var r = new Step(Stat.Reload, 0.878f, "SAM launchers reload {0}× as fast");
+        var h = Step.Chance(Stat.KillChance, 0.1125f, 0.7f, "SAM hit chance +{0} points");
         var c = new Step(Stat.Channels, 1f, "Each director guides SAMs at {0} more target at once");
+        var both = Step.Blend(r, h);
+        var three = Step.Blend(r, h, c);
         return new Upgrade
         {
             Name = "Surface-to-air missiles", Short = "SAMs", Icon = "sam", Kind = Kind.Weapon,
             Systems = s => Boosts.SamLaunchers(s).Concat<WeaponSystem>(Boosts.Hardpoints(s, Boosts.AirToAir)),
             Path = new[]
             {
-                r, h, c, r, Step.Ability(SeaSkimmerKillers = new Unlock("Sea-skimmer killers", "No low-altitude penalty, and SAMs engage missiles below their usual floor")),
-                h, r, c, h, Step.Ability(Hypersonic = new Unlock("Hypersonic", "SAMs fly 2.5× as fast")),
-                r, h, c, r, Step.Ability(LongReach = new Unlock("Long reach", "SAM range ×2.5")),
-                h, r, c, h, Step.Ability(HugeBlasts = new Unlock("Huge blasts", "Every intercept destroys all enemy missiles and aircraft within 150 m")),
+                both, both, three, both, Step.Ability(SeaSkimmerKillers = new Unlock("Sea-skimmer killers", "No low-altitude penalty, and SAMs engage missiles below their usual floor")),
+                both, both, three, both, Step.Ability(Hypersonic = new Unlock("Hypersonic", "SAMs fly 2.5× as fast")),
+                both, both, three, both, Step.Ability(LongReach = new Unlock("Long reach", "SAM range ×2.5")),
+                both, both, three, both, Step.Ability(HugeBlasts = new Unlock("Huge blasts", "Every intercept destroys all enemy missiles and aircraft within 150 m")),
             },
         };
     }
@@ -264,20 +298,20 @@ static class Upgrades
 
     static Upgrade MakeAntiShip()
     {
-        var s = new Step(Stat.Speed, 1.3229f, "Anti-ship missiles fly {0}× as fast");
-        var e = Step.Chance(Stat.Evasion, 0.3f, 0.7f, "Evasive manoeuvres: enemy SAMs hit our anti-ship missiles {0}% less often");
-        var d = new Step(Stat.Damage, 1.3229f, "Anti-ship warheads hit {0}× as hard");
-        var x = new Step(Stat.Range, 1.3229f, "Anti-ship missiles reach {0}× as far and can fire {0}× closer");
+        var all = Step.Blend(new Step(Stat.Speed, 1.0724f, "Anti-ship missiles fly {0}× as fast"),
+            Step.Chance(Stat.Evasion, 0.1125f, 0.7f, "Evasive manoeuvres: enemy SAMs hit our anti-ship missiles {0}% less often"),
+            new Step(Stat.Damage, 1.0724f, "Anti-ship warheads hit {0}× as hard"),
+            new Step(Stat.Range, 1.0356f, "Anti-ship missiles reach {0}× as far and can fire {0}× closer"));
         return new Upgrade
         {
             Name = "Anti-ship missiles", Short = "Anti-ship", Icon = "asm", Kind = Kind.Weapon,
             Systems = sh => Boosts.AntiShipLaunchers(sh).Concat<WeaponSystem>(Boosts.Hardpoints(sh, Boosts.AntiShipMissile)),
             Path = new[]
             {
-                s, e, d, x, Step.Ability(SmartSeekers = new Unlock("Smart seekers", "Anti-ship missiles ignore chaff and jamming")),
-                e, s, d, e, Step.Ability(WaveTop = new Unlock("Wave-top", "Anti-ship missiles skim and dive in at 10 ft: under almost every enemy SAM's floor")),
-                s, e, d, x, Step.Ability(Armoured = new Unlock("Armoured", "Anti-ship missiles take 4× the CIWS hits to bring down")),
-                e, s, d, e, Step.Ability(Ghost = new Unlock("Ghost", "Anti-ship missiles' radar signature ×0.1: enemy radars see them far later")),
+                all, all, all, all, Step.Ability(SmartSeekers = new Unlock("Smart seekers", "Anti-ship missiles ignore chaff and jamming")),
+                all, all, all, all, Step.Ability(WaveTop = new Unlock("Wave-top", "Anti-ship missiles skim and dive in at 10 ft: under almost every enemy SAM's floor")),
+                all, all, all, all, Step.Ability(Armoured = new Unlock("Armoured", "Anti-ship missiles take 4× the CIWS hits to bring down")),
+                all, all, all, all, Step.Ability(Ghost = new Unlock("Ghost", "Anti-ship missiles' radar signature ×0.1: enemy radars see them far later")),
             },
         };
     }
@@ -320,13 +354,16 @@ static class Upgrades
     }
 
     /// <summary>
-    /// Reach +60 nm, speed ×8, reload ÷8 and damage ×2 over the path, with
+    /// Reach +60 nm, speed ×8, reload ÷4 and damage ×2 over the path, every
+    /// rank raising all four, sized so a full RBU-6000 hull stays below anti-ship
+    /// missiles' rate (see tools/balance.py), since mortars outrange them and
+    /// Deep magazines never runs out. With
     /// Bombardment doubling the reach to about 125 nm. No real mortar comes
     /// close: this line is meant not to be realistic, an RBU-6000 out-ranging
     /// a Harpoon. Reach adds rather than multiplies so that a half-mile RBU-1000
     /// and a 3 nm RBU-6000 both get there; the RBU-1000 keeps its heavier
     /// warhead. Speed keeps a salvo's flight to one or two minutes at every
-    /// rank. Stock, a full RBU-6000 salvo that lands drains about 185 of a
+    /// rank. Stock, a full RBU-6000 salvo that lands drains about 370 of a
     /// ship's hidden integrity (a Krivak has 184), so damage is the smallest
     /// part of the line. Rounds are unguided until Hunting rounds, and carry a
     /// gun's aiming error, which grows with range, so the Accuracy line is what
@@ -336,19 +373,17 @@ static class Upgrades
 
     static Upgrade MakeMortars()
     {
-        var x = new Step(Stat.Reach, 10f, "Mortars reach {0} nm farther");
-        var s = new Step(Stat.Speed, 1.6818f, "Mortar rounds fly {0}× as fast");
-        var r = new Step(Stat.Reload, 0.5f, "Mortars reload {0}× as fast");
-        var d = new Step(Stat.Damage, 1.26f, "Mortar rounds hit {0}× as hard");
+        var all = Step.Blend(new Step(Stat.Reach, 3.75f, "Mortars reach {0} nm farther"), new Step(Stat.Speed, 1.139f, "Mortar rounds fly {0}× as fast"),
+            new Step(Stat.Reload, 0.917f, "Mortars reload {0}× as fast"), new Step(Stat.Damage, 1.044f, "Mortar rounds hit {0}× as hard"));
         return new Upgrade
         {
             Name = "Rocket mortars", Short = "Mortars", Icon = "mortar", Kind = Kind.Weapon, Systems = sh => Boosts.MortarLaunchers(sh),
             Path = new[]
             {
-                x, s, x, r, Step.Ability(HuntingRounds = new Unlock("Hunting rounds", "Rounds steer onto their target in flight, and if it sinks, onto the nearest enemy ship within 15 nm")),
-                d, x, s, r, Step.Ability(Spotters = new Unlock("Spotters", "Enemy ships within mortar reach go on the plot, seen or not")),
-                x, d, s, r, Step.Ability(DeepMagazines = new Unlock("Deep magazines", "Mortar magazines never run out")),
-                x, d, s, x, Step.Ability(Bombardment = new Unlock("Bombardment", "Mortar reach ×2")),
+                all, all, all, all, Step.Ability(HuntingRounds = new Unlock("Hunting rounds", "Rounds steer onto their target in flight, and if it sinks, onto the nearest enemy ship within 15 nm")),
+                all, all, all, all, Step.Ability(Spotters = new Unlock("Spotters", "Enemy ships within mortar reach go on the plot, seen or not")),
+                all, all, all, all, Step.Ability(DeepMagazines = new Unlock("Deep magazines", "Mortar magazines never run out")),
+                all, all, all, all, Step.Ability(Bombardment = new Unlock("Bombardment", "Mortar reach ×2")),
             },
         };
     }
@@ -404,29 +439,47 @@ static class Upgrades
     }
 
     /// <summary>
-    /// Three refits, air resupply every minute and bombs and rockets ×4 (a
-    /// Mk 82's 227 kg to a Mk 84's 907 kg) over the path. Refits take strike
-    /// flights from unguided bombs to guided ones to Harpoons or AS-4s (see
-    /// <see cref="Refits"/>). A flight with no carrier is useless once its
-    /// pylons are empty, so the rest of the line keeps them full; its
-    /// missiles already rank up with the SAM and anti-ship lines. Offered for
-    /// chest and starting flights only: a Kiev's own aircraft rearm on its
-    /// deck, and no refit reaches them, though the line's bomb and rocket damage does.
+    /// Three refits, air resupply every minute and every weapon an aircraft
+    /// fires ×4 over the path, on top of what the anti-ship, SAM and gun lines
+    /// give the same rounds. Refits take strike flights from unguided bombs to
+    /// guided ones to Harpoons or AS-4s (see <see cref="Refits"/>). A flight
+    /// with no carrier is useless once its pylons are empty, so the rest of
+    /// the line keeps them full. Offered for chest and starting flights only:
+    /// a Kiev's own aircraft rearm on its deck, and no refit reaches them,
+    /// though the line's damage does.
+    /// Under the Argentine ensign flights keep their iron bombs, so the
+    /// refits give way to the bombs and the airframes that carry them.
     /// </summary>
     public static readonly Upgrade AirWing = MakeAirWing();
 
     static Upgrade MakeAirWing()
     {
-        var d = new Step(Stat.Damage, 1.1892f, "Bombs and rockets hit {0}× as hard");
+        var d = new Step(Stat.Damage, 1.1892f, "Every weapon your aircraft fire hits {0}× as hard");
         var r = new Step(Stat.Reload, 0.8409f, "Air resupply comes {0}× as often");
+        var resupply = new Step(Stat.Resupply, 1f, "Flights rearm in the air every 4 minutes, not only at level-ups", "Air resupply");
+
+        var bombs = Step.Blend(
+            new Step(Stat.Damage, 1.1892f, "Bombs and rockets hit {0}× as hard"),
+            new Step(Stat.Accuracy, 0.8691f, "Bombs land {0}× as close"));
+        var agile = Step.Blend(r, new Step(Stat.Turn, 1.1f, "Strike aircraft turn {0}× as hard"));
+        var decoys = Step.Blend(r, Step.Chance(Stat.Spoof, 0.25f, 0.6f, "Aircraft chaff spoof chance +{0} points"));
+        Step[] ironBombs =
+        {
+            bombs, bombs, bombs, bombs, new Step(Stat.Speed, 1.25f, "Strike aircraft fly 1.25× as fast", "Uprated engines"),
+            bombs, bombs, bombs, bombs, resupply,
+            agile, agile, agile, agile, new Step(Stat.Rcs, 0.5f, "Strike aircraft have half the radar signature", "Radar-absorbent paint"),
+            decoys, decoys, decoys, decoys, new Step(Stat.Speed, 1.2f, "Strike aircraft fly 1.2× as fast again", "Stripped airframe"),
+        };
+
         return new Upgrade
         {
             Name = "Air wing", Short = "Air wing", Icon = "air", Kind = Kind.Weapon,
             Systems = s => Run.Current != null && Run.Current.AirWing.ContainsKey(s) ? Boosts.Hardpoints(s, _ => true) : Enumerable.Empty<WeaponSystemHardpoint>(),
+            Variant = () => Ensigns.Active(Ensigns.IronBombs) ? ironBombs : null,
             Path = new[]
             {
                 d, d, d, d, new Step(Stat.Refit, 1f, "A-7Es stay, with Walleye guided bombs; Yak-38s become Su-24As with AS-14s", "Guided weapons refit"),
-                d, d, d, d, new Step(Stat.Resupply, 1f, "Flights rearm in the air every 4 minutes, not only at level-ups", "Air resupply"),
+                d, d, d, d, resupply,
                 r, r, r, r, new Step(Stat.Refit, 1f, "A-7Es become A-6Es with two Harpoons; Su-24As become Su-24Ms with AS-14s and KAB-500Ls", "New aircraft refit"),
                 r, r, r, r, new Step(Stat.Refit, 1f, "A-6Es and Hornets carry four Harpoons; Soviet flights become Tu-22M2s with three AS-4s", "Heavy loadout refit"),
             },
@@ -505,9 +558,9 @@ static class Upgrades
     /// <summary>Chances, which stack hyperbolically towards their cap.</summary>
     static bool Chance(Stat stat) => stat == Stat.KillChance || stat == Stat.Intercept || stat == Stat.Spoof || stat == Stat.Evasion;
     /// <summary>Counts, which add.</summary>
-    static bool Additive(Stat stat) => stat == Stat.Channels || stat == Stat.Reach;
+    static bool Additive(Stat stat) => stat == Stat.Channels || stat == Stat.Reach || stat == Stat.ShellPower;
     /// <summary>Factors below one, where smaller is better: shown as their inverse.</summary>
-    static bool Shrinks(Stat stat) => stat == Stat.Reload || stat == Stat.Rcs || stat == Stat.Reaction || stat == Stat.Accuracy;
+    static bool Shrinks(Stat stat) => stat == Stat.Reload || stat == Stat.Rcs || stat == Stat.Reaction || stat == Stat.Accuracy || stat == Stat.GunAim;
     /// <summary>Fractions shown as points or percent.</summary>
     static bool Fraction(Stat stat) => stat == Stat.KillChance || stat == Stat.Spoof || stat == Stat.Evasion;
 
@@ -523,12 +576,14 @@ static class Upgrades
         Step any = null;
         for (int i = 0; i < ranks && i < line.Path.Length; i++)
         {
-            var step = line.Path[i];
-            if (step.Stat != stat) continue;
-            any = step;
-            n++;
-            product *= step.Value;
-            sum += step.Value;
+            foreach (var step in line.Path[i].Effects)
+            {
+                if (step.Stat != stat) continue;
+                any = step;
+                n++;
+                product *= step.Value;
+                sum += step.Value;
+            }
         }
         if (Chance(stat)) return any == null ? 0f : any.Cap * (1f - 1f / (1f + any.Value * n));
         return Additive(stat) ? sum : product;
@@ -556,7 +611,8 @@ static class Upgrades
     public static string Describe(Upgrade line, int index)
     {
         var step = line.Path[index];
-        return step.IsAbility ? $"{step.Name}: {step.Text}" : Text(step, Gain(line, step.Stat, index, index + 1));
+        return step.IsAbility ? $"{step.Name}: {step.Text}"
+            : string.Join(", ", step.Effects.Select(e => Text(e, Gain(line, e.Stat, index, index + 1))));
     }
 
     /// <summary>
@@ -575,31 +631,31 @@ static class Upgrades
         for (int i = from; i < to; i++)
         {
             var step = line.Path[i];
-            if (step.Stat == Stat.Refit && Ensigns.Active(Ensigns.IronBombs)) abilities.Add((step.Name, "Flights keep their bombs"));
-            else if (step.IsAbility) abilities.Add((step.Name, step.Text));
-            else if (emp && step.Stat == Stat.Damage) continue;
-            else if (seen.Add(step.Stat)) stats.Add((step.Stat, Text(step, Gain(line, step.Stat, from, to))));
+            if (step.IsAbility) abilities.Add((step.Name, step.Text));
+            else
+                foreach (var effect in step.Effects)
+                {
+                    if (emp && effect.Stat == Stat.Damage) continue;
+                    if (seen.Add(effect.Stat)) stats.Add((effect.Stat, Text(effect, Gain(line, effect.Stat, from, to))));
+                }
         }
         return (stats, abilities);
     }
 
     /// <summary>The stats ranks [from, to) of a line touch, in path order, the switches among them; not pure abilities.</summary>
     public static IEnumerable<Stat> StatsIn(Upgrade line, int from, int to) =>
-        line.Path.Skip(from).Take(to - from).Where(s => s.Stat != Stat.Ability).Select(s => s.Stat).Distinct();
-
-    /// <summary>A rank that does nothing under the ensigns flown: refits, for flights that keep their iron bombs.</summary>
-    static bool Idle(Step step) => step.Stat == Stat.Refit && Ensigns.Active(Ensigns.IronBombs);
+        line.Path.Skip(from).Take(to - from).SelectMany(s => s.Effects).Where(s => s.Stat != Stat.Ability).Select(s => s.Stat).Distinct();
 
     /// <summary>The first ability at or after <paramref name="from"/> (an index), and how many ranks away it is; null past the last.</summary>
     public static (Step step, int ranks)? NextAbility(Upgrade line, int from)
     {
         for (int i = from; i < line.Path.Length; i++)
-            if (line.Path[i].IsAbility && !Idle(line.Path[i])) return (line.Path[i], i + 1 - from);
+            if (line.Path[i].IsAbility) return (line.Path[i], i + 1 - from);
         return null;
     }
 
     /// <summary>A line's abilities already taken.</summary>
-    public static IEnumerable<Step> Earned(Run run, Upgrade line) => line.Path.Take(run.RankOf(line)).Where(s => s.IsAbility && !Idle(s));
+    public static IEnumerable<Step> Earned(Run run, Upgrade line) => line.Path.Take(run.RankOf(line)).Where(s => s.IsAbility);
 
     /// <summary>What a line's taken ranks add up to, a line per stat: the HUD's "in effect".</summary>
     public static List<string> Summary(Run run, Upgrade line)
@@ -627,7 +683,11 @@ static class Upgrades
                 Stat.Seeker => $"Seeker range and arc ×{F(total)}",
                 Stat.Reach => $"Reach +{total:0} nm",
                 Stat.Reaction => $"Crews react ×{F(1f / total)} as fast",
-                Stat.Accuracy => $"Aiming error ÷{F(1f / total)}",
+                Stat.Accuracy => line == AirWing ? $"Bomb scatter ÷{F(1f / total)}" : $"Aiming error ÷{F(1f / total)}",
+                Stat.Turn => $"Turn rate ×{F(total)}",
+                Stat.Rcs => $"Radar signature ÷{F(1f / total)}",
+                Stat.GunAim => $"Gun aiming error ÷{F(1f / total)}",
+                Stat.ShellPower => $"Shell power +{total:0}",
                 Stat.DecoyRule => "Decoys are never forced to fail",
                 _ => null,
             };
@@ -641,5 +701,5 @@ static class Upgrades
 
     /// <summary>True once a rank with this stat has been taken: for steps that switch something on.</summary>
     public static bool Has(Run run, Upgrade line, Stat stat) =>
-        line.Path.Take(run.RankOf(line)).Any(s => s.Stat == stat);
+        line.Path.Take(run.RankOf(line)).Any(s => s.Effects.Any(e => e.Stat == stat));
 }

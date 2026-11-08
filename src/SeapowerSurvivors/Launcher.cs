@@ -34,13 +34,16 @@ sealed class Loadout
 /// <summary>A ship a run can start in.</summary>
 sealed class StartingShip
 {
-    public readonly string Name, Type, Variant, Fit;
+    public readonly string Name, Type, Variant, Weapons, Fit;
+    public readonly int Year;
 
-    public StartingShip(string name, string type, string variant, string fit = null)
+    public StartingShip(string name, string type, string variant, int year, string weapons, string fit = null)
     {
         Name = name;
         Type = type;
         Variant = variant;
+        Year = year;
+        Weapons = weapons;
         Fit = fit;
     }
 
@@ -64,17 +67,20 @@ static class Launcher
 {
     internal static readonly StartingShip[] Flagships =
     {
-        new StartingShip("Sverdlov", "wp_kr_sverdlov", "Variant1"),
-        new StartingShip("Oliver Hazard Perry", "usn_ffg_oliver_hazard_perry", "Variant1"),
-        new StartingShip("Kidd", "usn_ddg_kidd", "Variant3"),
-        new StartingShip("Sovremenny", "wp_em_sovremenny", "Variant1", "Late"),
-        new StartingShip("Long Beach", "usn_cgn_long_beach_83", "Variant1"),
-        new StartingShip("Slava", "wp_rkr_slava", "Variant1"),
-        new StartingShip("Iowa", "usn_bb_iowa", "Variant1"),
-        new StartingShip("Bunker Hill", "usn_cg_bunker_hill", "Variant1", "Late"),
-        new StartingShip("Kirov", "wp_rkr_kirov", "Variant1"),
+        // Year is the service date in each hull's variants ini. Weapons are read off
+        // its ini for the fit it sails with:
+        // anti-ship, SAMs, guns, close-in, anti-submarine.
+        new StartingShip("Sverdlov", "wp_kr_sverdlov", "Variant1", 1952, "152 mm · 100 mm · AK-230"),
+        new StartingShip("Oliver Hazard Perry", "usn_ffg_oliver_hazard_perry", "Variant1", 1977, "Harpoon · SM-1MR · 76 mm · Phalanx · Mk-46"),
+        new StartingShip("Kidd", "usn_ddg_kidd", "Variant3", 1981, "Harpoon · SM-1MR · 127 mm · Phalanx · ASROC · Mk-46"),
+        new StartingShip("Sovremenny", "wp_em_sovremenny", "Variant1", 1980, "SS-N-22 · SA-N-12 · 130 mm · AK-630 · SS-N-16 · RBU-1000", "Late"),
+        new StartingShip("Long Beach", "usn_cgn_long_beach_83", "Variant1", 1983, "Tomahawk · Harpoon · SM-2ER · 127 mm · Phalanx · ASROC · Mk-46"),
+        new StartingShip("Slava", "wp_rkr_slava", "Variant1", 1982, "SS-N-12 · SA-N-6 · SA-N-4 · 130 mm · AK-630 · RBU-6000 · SET-65"),
+        new StartingShip("Iowa", "usn_bb_iowa", "Variant1", 1984, "Tomahawk · Harpoon · 406 mm · 127 mm · Phalanx"),
+        new StartingShip("Bunker Hill", "usn_cg_bunker_hill", "Variant1", 1986, "Tomahawk · Harpoon · SM-2MR · 127 mm · Phalanx · VL-ASROC · Mk-46", "Late"),
+        new StartingShip("Kirov", "wp_rkr_kirov", "Variant1", 1980, "SS-N-19 · SA-N-6 · SA-N-4 · 100 mm · AK-630 · SS-N-14 · RBU-6000 · RBU-1000 · SET-65"),
         // Its air group comes from its own ini; the player launches it.
-        new StartingShip("Kiev", "wp_takr_kiev", "Variant1"),
+        new StartingShip("Kiev", "wp_takr_kiev", "Variant1", 1975, "SS-N-12 · SA-N-3 · SA-N-4 · 76 mm · AK-630 · RBU-6000 · SET-65"),
     };
 
     /// <summary>The weapon fit our ships of this type use, whichever way they join; null for the game's default.</summary>

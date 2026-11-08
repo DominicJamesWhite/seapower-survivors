@@ -67,8 +67,12 @@ at, and so does the director's `Role` in `sensors.ini`.
   every primary launcher; past 10 nm they are refused
   (`AI.AutoAttackOpponentInRange`, the `magnitude > 275.59` test), and against torpedoes
   past 1 nm. One in flight or tasked at a target makes `CheckIfAlreadyHandled`
-  return true at once, for the whole taskforce. `Mortars` takes ours away from
-  all of this.
+  return true at once, for the whole taskforce. Inside 10 nm the task is given
+  whatever the mortar's range, and `AlignUnitToTarget` then steers the ship at
+  its target to get there. So in a run `Mortars` takes mortars away from the AI
+  against surface ships, on both sides. Only a fleet with the Mortars line, the
+  St Andrew's flag or the White Ensign fires them at ships, under its own fire
+  control and only at ships already in reach.
 
 ## Fire control is the bottleneck
 
@@ -86,6 +90,29 @@ fire-and-forget missiles (Harpoon, Soviet anti-ship missiles) skip this check.
 
 Soviet directors for comparison: Top_Dome (SA-N-6) 3 targets / 6 missiles;
 Front_Dome (SA-N-7) 1/2 each, ×6 on Sovremenny.
+
+### Gun fire
+
+- **Shells follow a set path.** A shell moves from the muzzle to an aim point fixed at
+  firing and arrives after the computed time of flight. Nothing corrects it in flight,
+  so a target that turns after the shot is missed however good the aim was.
+- **Spotting hold, surface fire only.** Without a director that tracks rounds, `fire()`
+  holds a gun to one shell per time of flight while
+  `(1 - solution) x target speed x flight time x 0.5 + range error > 1.5 x (shell pattern)`.
+  The range error here ignores crew and aim factors. Tight guns are held longest. Fleet
+  guns skip this from Guns rank 1.
+- **Solution.** A director starts each target at its `FCMinSolution` and gains about
+  0.125 per landed shell. It resets when a mount sharing it ends an engagement. Reaction
+  ranks raise the slow build between shells.
+- **Flak.** A proximity shell bursts on the first collider within its fuze radius, other
+  than its own launcher, so it can burst on an aircraft it wasn't aimed at, a pilot,
+  or one of our own missiles, which it damages as it would an enemy's. Damage is full
+  within 10% of the fuze radius, then falls by distance squared: 1% at the edge.
+- **Anti-air aim and range.** A gun draws its aiming error every 4–8 s, and every shell in that
+  time shares it; with Anti-air fire ours draw it every second. An engaged gun fires out to
+  1.15× its AA range, which ours cap so no shell goes past 15 km.
+- **Air fire and sea-skimmers.** A proximity shell below 3 m plus wave height ends without
+  a blast, so shells aimed at a very low missile often end short of it.
 
 ## Radar detection
 
@@ -197,7 +224,12 @@ Target RCS in m² (`[RCS]` in `sensors.ini`):
 4. **Overkill check** (`AI.CheckIfAlreadyHandled`). This adds up the
    `_saturationValue` of everything already in flight at the target. For the
    player's ship against air targets, doctrine `AASalvoSize` (One / Two /
-   Saturation) decides instead.
+   Saturation) decides instead. A ship is "handled" once the value in the air at it
+   exceeds its `MissilesToSaturate` (Perry 5, Sverdlov 6, Kidd 8, Long Beach 10,
+   Iowa 12, Bunker Hill 24), or, for a whole taskforce, once a salvo fired more than
+   20 s ago is still flying. Handled also stops that taskforce's guns from taking
+   new tasks at the ship. Late in a run the mod raises this
+   (`CombatHooks.EnemyKeepsFiring`).
 5. **Ammo choice** (`AI.SelectLauncherAmmoForAutoEngage`). Against ships it
    keeps the matching ammo with the **longest** range.
 6. **Launcher sequence** (`WeaponSystemLauncher.OnUpdate`), in order:
@@ -285,8 +317,9 @@ range and any speed land on the aim point**; only `_launchRangesInUnity.y` limit
 it. There is no yaw after the first second, and the lead uses full speed though
 the round climbs. It detonates when it sinks to the target's height, with a
 `VeryLarge` blast (120 m, against every ship within it): power 14 for an RGB-60,
-30 for an RGB-10, halved for fragmentation, so about 15 of the hidden pool a
-round. `MaxFlightTime` is only read by `Missile`. A round has no thrust after
+30 for an RGB-10. `WarheadType=0` is high explosive in code, whatever the INI's
+comment says, so neither is halved: an RGB-60 takes about 31 of the hidden pool
+at neutral difficulty. `MaxFlightTime` is only read by `Missile`. A round has no thrust after
 the first phase, so whatever speed it has at the end of it, it keeps.
 
 **Reloading is the animation.** `ReloadTime` is set just past the length of the
@@ -308,17 +341,18 @@ Preloaded launchers without an animation reseat as the instant reload ends.
 ## Interception
 
 - **SAMs: one dice roll per missile, about 1 nm before arrival**
-  (`Utils.GetInterceptionChance`). The chance starts from the missile's
-  `KillProbability`, then:
-  - **Target size:** large aircraft are easier (+0.1, or +0.2 against SARH);
-    helicopters −0.05; missiles −0.2.
-  - **Speed:** a penalty above 570 kn.
-  - **Low altitude:** −0.01 to −0.12.
-  - **Outside the SAM's engagement envelope:** −0.5, capped at 0.05.
-  - **Target bonus:** minus the incoming missile's `MissileDefenceBonus`
-    (P-500 and P-700: 0.15).
-  - **Floor:** 0.05.
+  (`Utils.GetInterceptionChance`). The factors multiply:
+  - `KillProbability` less any guidance penalty;
+  - **Speed:** 1 − 2 × a penalty that starts at half the SAM's `MaxAttackVelocity`
+    (670 kn if it has none), capped at 0.5 before doubling;
+  - **Size:** 1 − 2 × (1 − √size ÷ 122) ÷ 5, from `FrontalArea` or mass, clamped to
+    ±0.5. Big targets can push the chance past 100%;
+  - **Altitude:** 1 − 2 × a penalty that grows below `MinAttackAltitude` and
+    just above it, from `InterceptOutOfAltitudePenalty`;
+  - **Target bonus:** 1 − the missile's `MissileDefenceBonus`;
+  - **Difficulty:** at the default, ×1.2 for our SAMs and ×0.8 for those fired at us.
 
+  **Floor:** 0.05.
   A failed roll forces a physical miss.
 - **Sea-skimmers below a SAM's `MinAttackAltitude` drop to about 5%.** Example:
   SM-1 has a 50 ft floor, and SS-N-22B terminal altitude is 23 ft.

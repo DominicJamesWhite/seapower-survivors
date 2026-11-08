@@ -113,7 +113,7 @@ static class EnsignFlags
                    Star(u, v, 0.62f, 0.45f, 0.07f, 7, 0.45f) || Star(u, v, 0.88f, 0.4f, 0.07f, 7, 0.45f) ||
                    Star(u, v, 0.82f, 0.56f, 0.04f) ? blue : White;
         },
-        [Ensigns.Salvos.Id] = (u, v) =>
+        [Ensigns.FastAsms.Id] = (u, v) =>
         {
             if (u < 0.5f && v < 0.5f) return Bands(v * 2f, C(0xFF9933), White, C(0x138808));
             if (Disc(u, v, 0.75f, 0.5f, 0.2f)) return Shield(u, v, 0.75f, 0.5f, 0.11f) ? Gold : C(0x000080);

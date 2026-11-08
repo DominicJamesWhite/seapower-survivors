@@ -139,6 +139,61 @@ static class Sea
         return IsWater(beside) ? beside : Spawner.Offset(leader, index, bearing);
     }
 
+    /// <summary>
+    /// Moves a spawn so that all its <paramref name="members"/> are at least
+    /// <paramref name="clearNm"/> from every one of <paramref name="ships"/>.
+    /// Spawn distances are measured from the flagship, and an escort on station
+    /// can be sitting right where one lands. A spot already clear is left alone;
+    /// otherwise the nearest bearing at this distance, then further out, then
+    /// nearer in. False if nowhere is clear, as in a narrow strait: the spawn
+    /// then takes the clearest spot there is.
+    /// </summary>
+    /// <param name="water">Whether the way in from the spot must be open water, as for ships.</param>
+    internal static bool KeepClear(GeoPosition from, IList<GeoPosition> ships, int members, bool water, float clearNm, ref float bearing, ref float distanceNm)
+    {
+        float bestGap = GroupGap(ships, Spawner.Offset(from, distanceNm, bearing), bearing, members);
+        if (bestGap >= clearNm) return true;
+
+        // Past this, a spot is clear of every ship whichever way it lies.
+        float furthest = Mathf.Max(distanceNm, ships.Max(s => (float)from.getDistanceInMiles(s)) + clearNm + members);
+        if (water) Measure(from, furthest);
+
+        float startBearing = bearing, startDistance = distanceNm, bestBearing = bearing, bestDistance = distanceNm;
+        var distances = Enumerable.Range(0, Mathf.CeilToInt(furthest - startDistance) + 1).Select(i => startDistance + i)
+            .Concat(Enumerable.Range(1, Mathf.Max(0, Mathf.FloorToInt(startDistance) - 1)).Select(i => startDistance - i));
+        int steps = Mathf.RoundToInt(180f / BearingStepDeg);
+        foreach (float d in distances)
+            for (int k = 0; k <= 2 * steps; k++)
+            {
+                // 0, +1, -1, +2, -2...: the smallest turn off the bearing first.
+                float candidate = Wrap(startBearing + (k + 1) / 2 * BearingStepDeg * (k % 2 == 1 ? 1f : -1f));
+                if (water && runs[Mathf.RoundToInt(candidate / BearingStepDeg) % runs.Length] < d) continue;
+                var front = Spawner.Offset(from, d, candidate);
+                // A group is never further from a ship than its leader is, so this skips the land checks in Abreast.
+                if (Nearest(ships, front) <= bestGap) continue;
+                float gap = GroupGap(ships, front, candidate, members);
+                if (gap <= bestGap) continue;
+                bestGap = gap;
+                bestBearing = candidate;
+                bestDistance = d;
+                if (gap >= clearNm)
+                {
+                    bearing = candidate;
+                    distanceNm = d;
+                    return true;
+                }
+            }
+        bearing = bestBearing;
+        distanceNm = bestDistance;
+        return false;
+    }
+
+    static float GroupGap(IList<GeoPosition> ships, GeoPosition front, float bearing, int members) =>
+        Enumerable.Range(0, Mathf.Max(members, 1)).Min(i => Nearest(ships, Abreast(front, bearing, i)));
+
+    static float Nearest(IList<GeoPosition> ships, GeoPosition at) =>
+        ships.Min(s => (float)at.getDistanceInMiles(s));
+
     static List<float> OpenBearings(GeoPosition from, float distanceNm, out float longest, out float longestRun)
     {
         Measure(from, distanceNm);

@@ -86,12 +86,76 @@ static class Progression
     /// so big ships still pay more but never a lump: a Zhuk 2, a Kashin 6, a
     /// Kirov 12. A boss's real reward is its chest.
     /// </summary>
-    public static float ForUnit(ObjectBase unit)
+    public static float ForUnit(ObjectBase unit) => Mathf.Max(1f, Mathf.Round(1.6f * Mathf.Sqrt(Worth(unit))));
+
+    /// <summary>The table's worth of a unit, before XP's compression.</summary>
+    static float Worth(ObjectBase unit)
     {
         string type = unit._obp?._objectIniName;
-        float worth = type != null && UnitXp.TryGetValue(type, out float xp) ? xp : unit.IsAirUnit ? 3f : 5f;
-        return Mathf.Max(1f, Mathf.Round(1.6f * Mathf.Sqrt(worth)));
+        return type != null && UnitXp.TryGetValue(type, out float xp) ? xp : unit.IsAirUnit ? 3f : 5f;
     }
+
+    /// <summary>
+    /// Sea Power's own mission score, worked out as its debrief does
+    /// (<c>MissionDebriefViewModel.CalculateEndMissionData</c>): enemy losses
+    /// less ours, by each unit's <c>UnitScoreValue</c>, times ten. Kept line
+    /// for line with the game, including that a damaged unit's share replaces
+    /// its side's last one rather than adding to it, so the two always agree.
+    /// </summary>
+    public static int MissionScore()
+    {
+        var damaged = new Dictionary<Taskforce, float>();
+        var neutralsHit = new Dictionary<Taskforce, float>();
+        var civiliansHit = new Dictionary<Taskforce, float>();
+        float Of(Dictionary<Taskforce, float> scores, Taskforce side) => scores.TryGetValue(side, out float value) ? value : 0f;
+
+        foreach (var unit in Singleton<ObjectsManager>.Instance._listOfAllUnits)
+        {
+            if (unit == null || unit.Disabled || unit.IsDestroyed || unit._obp == null || unit._taskforce == null
+                || unit._obp._unitRoles.Contains(ObjectBaseParameters.UnitRoles.Deco)
+                || unit._obp._unitRoles.Contains(ObjectBaseParameters.UnitRoles.SeaMine))
+                continue;
+            float damage = unit.Compartments != null ? 1f - unit.Compartments.IntegrityPercentage / 100f
+                : unit.IsAirUnit || unit._totalDamagePoints < 0.1f ? 0f
+                : unit._overallDamage / unit._totalDamagePoints;
+            if (damage < 0.11f) continue;
+            float share = unit._obp._unitScoreValue * Mathf.Min(damage, 1f);
+            damaged[unit._taskforce] = share;
+
+            Taskforce attacker = null;
+            float most = -1f;
+            foreach (var hit in unit.Info._damageByTaskforce)
+                if (hit.Value > most) { most = hit.Value; attacker = hit.Key; }
+            if (attacker == null || unit._taskforce != Globals._neutralTaskforce) continue;
+            var tally = unit._obp._isCivilian ? civiliansHit : neutralsHit;
+            tally[attacker] = Of(tally, attacker) + share;
+        }
+
+        float enemyLoss = 0f, enemyCivilianLoss = 0f, friendlyLoss = 0f, playerCivilianLoss = 0f;
+        foreach (var side in Singleton<TaskforceManager>.Instance._taskForces)
+        {
+            float loss = side._lossScore + Of(damaged, side) + Of(neutralsHit, side) * (float)side._roe;
+            float civilian = (side._neutralMilitaryKillScore + Of(civiliansHit, side) + side._civKillScore) * (float)side._roe;
+            switch (Globals._playerTaskforce.RelationshipTo(side))
+            {
+                case RelationsState.Hostile: enemyLoss += loss; enemyCivilianLoss += civilian; break;
+                case RelationsState.Friendly: friendlyLoss += loss; break;
+            }
+            if (side == Globals._playerTaskforce) playerCivilianLoss += civilian;
+        }
+        foreach (var objective in Singleton<MissionManager>.Instance.Objectives)
+        {
+            if (objective._isCanceled) continue;
+            if (objective._isFailed) friendlyLoss -= objective._failedScore;
+            else if (objective._isCompleted) friendlyLoss -= objective._completedScore;
+            else if (objective._failOnMissionEnd) friendlyLoss -= objective._failedScore;
+            else if (objective._completeOnMissionEnd) friendlyLoss -= objective._completedScore;
+        }
+        return Mathf.FloorToInt((enemyLoss + enemyCivilianLoss - friendlyLoss - playerCivilianLoss) * 10f);
+    }
+
+    /// <summary>Surviving the full run doubles the score.</summary>
+    public const int WinScoreFactor = 2;
 
     /// <summary>No single award pays more than this many of the current level's XP.</summary>
     public const float MaxLevelsPerAward = 2f;

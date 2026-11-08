@@ -45,12 +45,20 @@ sealed class Run
     internal readonly Queue<int> ShipChests = new Queue<int>();
     internal int Kills;
     internal int Intercepts;
+    /// <summary>The game's mission score at the director's last tick, kept because it cannot be worked out once the mission has been left; see <see cref="FinalScore"/>.</summary>
+    internal int Score;
+    internal bool Won;
+    /// <summary>The area this run is fought in, by id; null for one not launched from the Survivors screen, which keeps no high score.</summary>
+    internal string AreaId;
+    /// <summary>The escorts and flights the run started with, as a high score shows them.</summary>
+    internal List<string> StartingEscorts = new List<string>();
+    internal int FinalScore => Won ? Score * Progression.WinScoreFactor : Score;
     /// <summary>True for a real run, whose XP goes to the profile's bank; false for one started from the test panel.</summary>
     internal bool Counts;
     internal bool Banked;
     /// <summary>The ensigns flown this run, fixed when it starts.</summary>
     internal readonly List<Ensign> Hoisted;
-    /// <summary>The flagship has taken damage at some point this run: what the Dannebrog waits for.</summary>
+    /// <summary>Times enemy fire has come close to the fleet this run: what the Dannebrog counts.</summary>
     internal int CloseCalls;
     /// <summary>Hits the flagship can still ignore, under the Turkish ensign.</summary>
     internal int HitsToIgnore;

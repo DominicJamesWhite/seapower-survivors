@@ -14,7 +14,8 @@ namespace SeapowerSurvivors;
 static class EnsignCombat
 {
     const float HeavyGunDamage = 4f, HeavyMissileDamage = 2f, BombDamage = 10f, TorpedoDamage = 1.5f;
-    const float DamagePerCloseCall = 0.1f, PointBlankDamage = 3f;
+    const float PointBlankDamage = 6f;
+    const float UnityPerNm = 27.559496f;
 
     static readonly AccessTools.FieldRef<Blastzone, ObjectBase> BlastPlatform = AccessTools.FieldRefAccess<Blastzone, ObjectBase>("_launchPlatform");
     static readonly AccessTools.FieldRef<Blastzone, AmmunitionParameters> BlastAmmo = AccessTools.FieldRefAccess<Blastzone, AmmunitionParameters>("_ap");
@@ -27,7 +28,7 @@ static class EnsignCombat
     static float OurDamage(AmmunitionParameters ap)
     {
         float factor = 1f;
-        if (Ensigns.Active(Ensigns.LastStand)) factor *= 1f + DamagePerCloseCall * Run.Current.CloseCalls;
+        if (Ensigns.Active(Ensigns.LastStand)) factor *= 1f + Ensigns.CloseCallPercent / 100f * Run.Current.CloseCalls;
         switch (ap._type)
         {
             case Ammunition.Type.Projectile:
@@ -198,7 +199,44 @@ static class EnsignCombat
         if (run.Hoisted.Contains(Ensigns.TorpedoEcm)) EcmFit.Tick(run);
         if (run.Hoisted.Contains(Ensigns.EmpMortars)) TickDark();
         if (run.Hoisted.Contains(Ensigns.WireGuided)) TickWires(run);
+        if (run.Hoisted.Contains(Ensigns.LastStand)) TickCloseCalls(run);
     }
+
+    static readonly AccessTools.FieldRef<Projectile, Vector3> ShellPosition = AccessTools.FieldRefAccess<Projectile, Vector3>("_currentPos");
+
+    static double nextCloseCall;
+
+    /// <summary>The Dannebrog: any enemy weapon near a ship of ours counts, gun rounds included, so a small gunboat let in close is worth the risk.</summary>
+    static void TickCloseCalls(Run run)
+    {
+        double now = GameTime.missionElapsedTime;
+        if (now < nextCloseCall) return;
+        var ships = run.Fleet.Where(s => s != null && !s.IsDestroyed && !s.IsAirUnit).ToList();
+        if (!EnemyFireNear(ships)) return;
+        nextCloseCall = now + Ensigns.CloseCallSeconds;
+        run.CloseCalls++;
+        TestPanel.Report($"{Ensigns.LastStand.Name}: close call, damage +{run.CloseCalls * Ensigns.CloseCallPercent}%");
+    }
+
+    static bool EnemyFireNear(List<ObjectBase> ships)
+    {
+        float reach = Ensigns.CloseCallNm * UnityPerNm;
+        float reachSquared = reach * reach;
+        bool Near(Vector3 at) => ships.Any(s => (s.transform.position - at).sqrMagnitude <= reachSquared);
+
+        foreach (var weapon in Singleton<ObjectsManager>.Instance._listOfAllWeapons)
+            if (weapon != null && !weapon.IsDestroyed && weapon._taskforce == Globals._enemyTaskforce && IsAttack(weapon) && Near(weapon.transform.position))
+                return true;
+        // Shells are not objects the game lists with the weapons.
+        foreach (var shell in Singleton<ProjectileManager>.Instance._activeProjectiles)
+            if (shell._taskforce == Globals._enemyTaskforce && shell.getState() == Projectile.State.Traveling && Near(ShellPosition(shell)))
+                return true;
+        return false;
+    }
+
+    /// <summary>False for the decoys and sonobuoys the game also keeps among its weapons.</summary>
+    static bool IsAttack(WeaponBase weapon) =>
+        !(weapon is ChaffCloud) && !(weapon is Noisemaker) && !(weapon is Bomb bomb && bomb._ap._subType == Ammunition.Type.Sonobuoy);
 
     /// <summary>The wire is cut once a torpedo has run half its range. Stock wires only ever break.</summary>
     static void TickWires(Run run)
@@ -288,9 +326,13 @@ static class EnsignCombat
         {
             __state = null;
             var crew = __instance._baseObject?._crew;
-            if (crew == null || !Ensigns.Active(Ensigns.LongCiws) || !InFleet(__instance._baseObject)) return;
+            var run = Run.Current;
+            if (crew == null || run == null || !InFleet(__instance._baseObject)) return;
+            // The Guns line's own aiming shares this hook: mortars read the crew's multiplier, so it can only be raised while a gun aims.
+            float factor = Boosts.GunAimFactor(run) * (Ensigns.Active(Ensigns.LongCiws) ? Ensigns.DutchAimFactor : 1f);
+            if (factor == 1f) return;
             __state = crew._fcErrorMultiplier;
-            crew._fcErrorMultiplier *= Ensigns.DutchAimFactor;
+            crew._fcErrorMultiplier *= factor;
         }
 
         static void Finalizer(WeaponSystemGun __instance, float? __state)
@@ -316,26 +358,10 @@ static class EnsignCombat
         }
     }
 
-    /// <summary>
-    /// The Indian ensign: twice the anti-ship missiles at each launch. The AI's
-    /// auto-attack fires them one at a time, so this makes two.
-    /// </summary>
-    [HarmonyPatch(typeof(AI), "AutoAttackSalvoSize")]
-    static class DoubleSalvo
-    {
-        static readonly AccessTools.FieldRef<AI, ObjectBase> AiShip = AccessTools.FieldRefAccess<AI, ObjectBase>("_baseObject");
-
-        static void Postfix(AI __instance, Ammunition ammo, ref int __result)
-        {
-            // The target type alone would take in bombs, rockets and shells too.
-            if (Ensigns.Active(Ensigns.Salvos) && ammo?._ap != null && ammo._ap._type == Ammunition.Type.Missile && Boosts.AntiShipMissile(ammo._ap) && InFleet(AiShip(__instance)))
-                __result *= 2;
-        }
-    }
-
     internal static void Reset()
     {
         ignored = null;
+        nextCloseCall = 0.0;
         darkened.Clear();
         EcmFit.Reset();
     }
@@ -343,28 +369,20 @@ static class EnsignCombat
     // Who sails, and who else comes.
 
     /// <summary>
-    /// The flights a launched run starts with. Double air wing: each of them
-    /// twice, or if there are none a free fighter pair. Iron bombs: a free strike
-    /// pair if none is sailing.
+    /// The flights a launched run starts with. Iron bombs: a free strike pair if
+    /// none is sailing.
     /// </summary>
     internal static List<Escort> StartingFlights(Run run, Loadout loadout)
     {
         var flights = new List<Escort>(loadout.Flights);
-        var navy = Store.StartingEscorts(loadout.Flagship).Where(e => e.IsAir).ToList();
-        if (run.Hoisted.Contains(Ensigns.DoubleAir))
-        {
-            if (flights.Count == 0)
-            {
-                var fighters = navy.FirstOrDefault(e => (e.Roles & Role.AirCover) != 0);
-                if (fighters != null) flights.Add(fighters);
-            }
-            flights.AddRange(flights.ToList());
-        }
-        if (run.Hoisted.Contains(Ensigns.IronBombs) && !flights.Any(e => (e.Roles & Role.AirStrike) != 0))
-        {
-            var strike = navy.FirstOrDefault(e => (e.Roles & Role.AirStrike) != 0);
-            if (strike != null) flights.Add(strike);
-        }
+        if (FreeStrikeFlight(run.Hoisted, flights, loadout.Flagship) is Escort strike) flights.Add(strike);
         return flights;
+    }
+
+    /// <summary>The Argentine ensign's free strike pair, or null if the ensign is not flying or a strike flight already sails.</summary>
+    internal static Escort FreeStrikeFlight(IEnumerable<Ensign> hoisted, IEnumerable<Escort> flights, StartingShip flagship)
+    {
+        if (!hoisted.Contains(Ensigns.IronBombs) || flights.Any(e => e.IsAir && (e.Roles & Role.AirStrike) != 0)) return null;
+        return Store.StartingEscorts(flagship).FirstOrDefault(e => e.IsAir && (e.Roles & Role.AirStrike) != 0);
     }
 }

@@ -150,8 +150,8 @@ static class Script
     public const float MissileApproachSeconds = 30f;
     /// <summary>A gun ship starts this many game minutes' steaming outside its own range, so it has to come in under fire.</summary>
     public const float GunApproachMinutes = 3f;
-    /// <summary>Nothing spawns nearer than this, whatever its weapons: closer looks like a glitch.</summary>
-    public const float MinSpawnNm = 2f;
+    /// <summary>Nothing spawns nearer than this to any ship of the fleet, whatever its weapons: closer looks like a glitch, and puts it inside the close-in guns at once.</summary>
+    public const float MinSpawnNm = 5f;
     /// <summary>The groups of one wave come in at least this far apart in bearing, where the water allows.</summary>
     public const float WaveSpreadDeg = 60f;
     /// <summary>Missile ships hold at this share of their own missile range.</summary>
@@ -195,6 +195,40 @@ static class Script
     };
     /// <summary>A ship this much beyond its firing range is not yet counted against the salvo limit: a couple of minutes' closing.</summary>
     public const float PendingMarginNm = 1.5f;
+
+    /// <summary>Game seconds before the end that the final assault begins. Three minutes, for a last two that are felt: a sea-skimmer takes that long to arrive.</summary>
+    public const float FinaleSeconds = 180f;
+    /// <summary>Game seconds between the final assault's waves, against 45 for the ordinary pulses.</summary>
+    public const float FinalePulseSeconds = 20f;
+    /// <summary>Each wave of the final assault spends this share of the plan's end-of-run budget, with no relaxing between them.</summary>
+    public const float FinaleBudgetShare = 0.4f;
+    /// <summary>The unit limit rises by this factor in the final assault, up to the most the frame rate can stand.</summary>
+    public const float FinaleAliveFactor = 1.25f, FinaleMaxAlive = 40f;
+    /// <summary>With fewer than this many game seconds left, nothing spawned could arrive before the run ends.</summary>
+    public const float FinaleLastSpawnSeconds = 45f;
+    /// <summary>What a sea-skimmer covers in a minute, and a striker.</summary>
+    public const float MissileNmPerMinute = 9.5f, StrikerNmPerMinute = 8f;
+    /// <summary>A missile ship in the final assault starts no further out than its missiles could cover by the end, within these limits.</summary>
+    public const float FinaleMinMissileNm = 8f, FinaleMaxMissileNm = 30f;
+    /// <summary>The nearest an aircraft spawns in the final assault.</summary>
+    public const float FinaleMinAirNm = 8f;
+    /// <summary>Gun ships in the final assault start this many minutes outside their range.</summary>
+    public const float FinaleGunApproachMinutes = 1f;
+    /// <summary>Stand-off raids launch this many game seconds before the end, so that what they fire lands in the last two minutes.</summary>
+    public static readonly float[] RaidSecondsLeft = { 360f, 270f };
+    /// <summary>Flights in one Soviet stand-off raid. A B-52 carries so many Harpoons that one flight of two is plenty.</summary>
+    public const int RaidFlights = 2;
+    /// <summary>Outside the missiles' 100 nm minimum range, with time to fire before flying inside it: AS-4s from here take about three minutes, AS-6s about four.</summary>
+    public const float RaidBackfireNm = 125f, RaidBadgerNm = 120f;
+    /// <summary>Close enough for what they carry to arrive in time: a Harpoon from 30 nm takes about three minutes.</summary>
+    public const float RaidCloseNm = 30f;
+    /// <summary>
+    /// The AI stops firing once the missiles in the air at a ship add up to its
+    /// MissilesToSaturate (see CombatHooks.EnemyKeepsFiring). That limit starts
+    /// to rise this many game seconds in, reaching this many times itself by the
+    /// final assault, which has no limit at all.
+    /// </summary>
+    public const float SaturationFromSeconds = 480f, SaturationLate = 2.5f;
     internal static bool IsWaiting(string type) => ShortFiringRangeNm.ContainsKey(type);
     /// <summary>Whether this hull, spawned at the edge of this reach, starts too far out to fire yet.</summary>
     internal static bool Pending(string type, float reachNm) =>

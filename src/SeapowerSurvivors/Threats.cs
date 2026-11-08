@@ -44,8 +44,23 @@ sealed class ThreatPlan
     public float OpeningSeconds = 60f;
     public Group[][] Stages;
     public BossPlan[] Bosses;
+    /// <summary>Swarms and packs that come only in the final assault, on top of every stage's groups.</summary>
+    public Group[] FinaleGroups;
+    /// <summary>Stand-off raids timed to land in the final assault, in the order to try them, and how far out each is released.</summary>
+    public (Group group, float nm, int flights)[] Raids;
 
-    public bool Open(Gate gate, Run run) => gate == Gate.None || Gates[gate](run);
+    /// <param name="finale">In the final assault every gate is one step easier: the enemy throws in the next tier up from what the fleet has earned, so a fleet with no missile defence meets only the small missile boats and bombers.</param>
+    public bool Open(Gate gate, Run run, bool finale = false) =>
+        gate == Gate.None || Gates[gate](run) || (finale && Open(StepDown(gate), run));
+
+    static Gate StepDown(Gate gate) => gate switch
+    {
+        Gate.A2 => Gate.A1,
+        Gate.A3 => Gate.A2,
+        Gate.M2 => Gate.M1,
+        Gate.M3 => Gate.M2,
+        _ => Gate.None,
+    };
 
     public int DangerOf(string type) => Danger.TryGetValue(type, out int danger) ? danger : 0;
 
@@ -53,15 +68,27 @@ sealed class ThreatPlan
     public int Cost(Group group) => group.Units.Sum(DangerOf);
 
     /// <summary>Whether every hull is one this ship faces, and every gate is open.</summary>
-    public bool Allows(string[] units, Run run) =>
-        units.All(u => DangerOf(u) > 0 && Open(Threats.GateOf(u), run));
+    public bool Allows(string[] units, Run run, bool finale = false) =>
+        units.All(u => DangerOf(u) > 0 && Open(Threats.GateOf(u), run, finale));
 
     /// <summary>Whether a ship's own missiles may be used, for a boss or set piece that comes regardless.</summary>
-    public bool MissilesAllowed(IEnumerable<string> units, Run run) =>
-        units.All(u => Open(Threats.GateOf(u), run));
+    public bool MissilesAllowed(IEnumerable<string> units, Run run, bool finale = false) =>
+        units.All(u => Open(Threats.GateOf(u), run, finale));
 
-    public float BudgetAt(float seconds) => Curve(Budget, seconds);
-    public float AliveAt(float seconds) => Curve(Alive, seconds);
+    /// <summary>A group that spawns this far out carries missiles that cannot be fired from any nearer, so it comes only as a timed raid.</summary>
+    const float StandOffRingNm = 100f;
+
+    /// <summary>Everything the final assault may buy from: all the stages at once, and its own swarms, but not stand-off bombers, which would spawn inside their own minimum range.</summary>
+    public IEnumerable<Group> FinaleMenu => Stages.SelectMany(s => s).Concat(FinaleGroups).Where(g => g.MinNm < StandOffRingNm).Distinct();
+
+    /// <summary>The hand-set curves are multiplied up to this by the end of the run, from minute 5: as set, they left the fleet untouched.</summary>
+    const float BudgetHarden = 1.6f, AliveHarden = 1.4f;
+    const float HardenFromSeconds = 300f;
+
+    static float Harden(float seconds, float most) => Mathf.Lerp(1f, most, Mathf.InverseLerp(HardenFromSeconds, Script.RunSeconds, seconds));
+
+    public float BudgetAt(float seconds) => Curve(Budget, seconds) * Harden(seconds, BudgetHarden);
+    public float AliveAt(float seconds) => Curve(Alive, seconds) * Harden(seconds, AliveHarden);
     public Group[] StageAt(float seconds)
     {
         int stage = Array.FindIndex(StageEnds, end => seconds < end);
@@ -76,8 +103,8 @@ sealed class ThreatPlan
     }
 
     /// <summary>The floor under the salvo limit from the highest missile gate open: the gate is the promise that the fleet can face these.</summary>
-    public float SalvoFloor(Run run) =>
-        Open(Gate.M3, run) ? 12f : Open(Gate.M2, run) ? 8f : Open(Gate.M1, run) ? 4f : 0f;
+    public float SalvoFloor(Run run, bool finale = false) =>
+        Open(Gate.M3, run, finale) ? 12f : Open(Gate.M2, run, finale) ? 8f : Open(Gate.M1, run, finale) ? 4f : 0f;
 }
 
 /// <summary>
@@ -168,17 +195,23 @@ static class Threats
 
     static ThreatPlan Soviet(int[] danger, Dictionary<Gate, Func<Run, bool>> gates, float[] budget, float[] alive, Group[][] stages, BossPlan[] bosses, Group[] opening = null) =>
         Build(SovietHulls, danger, gates, budget, alive, stages, bosses,
-            opening ?? new[] { Script.SovietEnemy.OneZhuk, Script.SovietEnemy.ZhukPair, Script.SovietEnemy.OneStenka });
+            opening ?? new[] { Script.SovietEnemy.OneZhuk, Script.SovietEnemy.ZhukPair, Script.SovietEnemy.OneStenka },
+            new[] { Script.SovietEnemy.YakSwarm, Script.SovietEnemy.FencerFour, Script.SovietEnemy.OsaPack, Script.SovietEnemy.TarantulTrio, Script.SovietEnemy.StenkaRing },
+            // Slowest missiles first, so both raids land in the last two minutes.
+            new[] { (Script.SovietEnemy.BadgerKs, Script.RaidBadgerNm, Script.RaidFlights), (Script.SovietEnemy.Backfires, Script.RaidBackfireNm, Script.RaidFlights), (Script.SovietEnemy.FencerMs, Script.RaidCloseNm, Script.RaidFlights) });
 
     static ThreatPlan Nato(int[] danger, Dictionary<Gate, Func<Run, bool>> gates, float[] budget, float[] alive, Group[][] stages, BossPlan[] bosses, Group[] opening = null) =>
         Build(NatoHulls, danger, gates, budget, alive, stages, bosses,
-            opening ?? new[] { Script.NatoEnemy.OnePgm, Script.NatoEnemy.PgmPair, Script.NatoEnemy.OneSleipner });
+            opening ?? new[] { Script.NatoEnemy.OnePgm, Script.NatoEnemy.PgmPair, Script.NatoEnemy.OneSleipner },
+            new[] { Script.NatoEnemy.SkyhawkSwarm, Script.NatoEnemy.CorsairFour, Script.NatoEnemy.TigerPack, Script.NatoEnemy.SleipnerRing },
+            new[] { (Script.NatoEnemy.B52s, Script.RaidCloseNm, 1), (Script.NatoEnemy.IntruderHarpoons, Script.RaidCloseNm, Script.RaidFlights) });
 
-    static ThreatPlan Build(string[] hulls, int[] danger, Dictionary<Gate, Func<Run, bool>> gates, float[] budget, float[] alive, Group[][] stages, BossPlan[] bosses, Group[] opening) =>
+    static ThreatPlan Build(string[] hulls, int[] danger, Dictionary<Gate, Func<Run, bool>> gates, float[] budget, float[] alive, Group[][] stages, BossPlan[] bosses, Group[] opening, Group[] finaleGroups, (Group, float, int)[] raids) =>
         new ThreatPlan
         {
             Danger = hulls.Zip(danger, (hull, value) => (hull, value)).Where(p => p.value > 0).ToDictionary(p => p.hull, p => p.value),
             Gates = gates, Budget = budget, Alive = alive, Stages = stages, Bosses = bosses, Opening = opening,
+            FinaleGroups = finaleGroups, Raids = raids,
         };
 
     static BossPlan Boss(Group group) => new BossPlan(group);
