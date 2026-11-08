@@ -10,8 +10,11 @@ under BepInEx. Numbers throughout are still being tuned.
 
 ## Build and install
 
-You need Sea Power and Anchor Chain installed. The mod is not on the Steam
-Workshop yet, so build it from source:
+Subscribe to [Survivors on the Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3836191830).
+You also need Anchor Chain, including its preloader: follow its
+[install guide](https://seapower-modders.github.io/AnchorChain/install-anchor-chain.html).
+
+To build from source instead, with Sea Power and Anchor Chain installed:
 
 ```
 dotnet build src/SeapowerSurvivors -c Release
@@ -143,3 +146,9 @@ and a profile wipe.
 weapon data to compare cards by numbers, and can check its model against a real
 run. [DamageLog.cs](src/SeapowerSurvivors/DamageLog.cs) records what each weapon
 did, in `<persistent data>/SeapowerSurvivors/damage/`.
+
+## License
+
+This mod is [MIT licensed](LICENSE). That covers the mod's own code, not Sea Power or its
+data, the charts drawn from that data, or the area positions taken from Quick
+Start.
