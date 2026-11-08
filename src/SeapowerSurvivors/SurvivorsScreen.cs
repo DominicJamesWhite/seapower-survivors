@@ -299,9 +299,7 @@ public sealed class AreaCard
     }
 
     /// <summary>
-    /// A painting copied by hand into the mod's own install folder, for
-    /// playing with Quick Start disabled. Never shipped: the art is Quick
-    /// Start's author's.
+    /// The mod's own chart of the area, for when Quick Start's painting is not available.
     /// </summary>
     static ImageSource LoadLocalArt(Area area)
     {

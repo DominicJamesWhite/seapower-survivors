@@ -121,9 +121,8 @@ sealed class Minute
 
 /// <summary>
 /// The enemy's groups, and what is on the clock: spikes and set pieces. Who
-/// comes when, and at what danger, is per starting ship: see Threats and
-/// docs/threat-plan.md. There is one list per enemy navy; the enemy is whichever
-/// side the starting ship is not.
+/// comes when, and at what danger, is per starting ship: see Threats. There is
+/// one list per enemy navy; the enemy is whichever side the starting ship is not.
 /// </summary>
 /// <remarks>
 /// Ships are not spawned on the rings given here: the director places each

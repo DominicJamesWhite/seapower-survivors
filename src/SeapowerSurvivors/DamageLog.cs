@@ -16,7 +16,7 @@ namespace SeapowerSurvivors;
 /// shots at ships, blasts that touched one, what each took from the hidden
 /// integrity pool and the structure, and which weapon last hit each ship that sank.
 /// Rows are split by the ranks held at the time, so hit rate and damage per hit
-/// come out per rank from any run. See docs/balance.md for the files.
+/// come out per rank from any run. The files go in the damage folder beside the profile.
 /// Measuring only: nothing here changes the fight, and a failure in it must not reach the game.
 /// </summary>
 static class DamageLog

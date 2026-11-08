@@ -52,8 +52,8 @@ sealed class PowerUp
 /// <summary>
 /// What banked XP buys. A run's starting fleet (the ships and flights that
 /// sail with the flagship, and two flagships) is bought once at fixed
-/// prices; the other flagships are free or won (see design.md's flagship
-/// progression). Permanent upgrades are bought rank by rank at Vampire
+/// prices; the other flagships are free or won (see FlagshipWins).
+/// Permanent upgrades are bought rank by rank at Vampire
 /// Survivors' prices and can be refunded. Prices are starting points for
 /// tuning: a run that reaches level 10 banks 90 XP, and one that reaches
 /// level 20 about 550.

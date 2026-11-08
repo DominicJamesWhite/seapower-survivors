@@ -10,10 +10,9 @@ namespace SeapowerSurvivors;
 /// </summary>
 /// <remarks>
 /// The game's Noesis UI has its Roboto as font files IMGUI cannot read, but
-/// sharedassets2 also holds Roboto Medium and Bold as Unity fonts. Regular is
-/// not among them, so the mod ships its own, in mod/fonts. If that will not
-/// load, Medium stands in, then a TMP font asset's source font, then a plain
-/// Windows UI font.
+/// sharedassets2 also holds Roboto Medium and Bold as Unity fonts. Until
+/// those load, a TMP font asset's source font stands in, then a plain Windows
+/// UI font. Unity would not read a Roboto TTF bundled with the mod.
 /// </remarks>
 static class Hud
 {
@@ -43,7 +42,6 @@ static class Hud
     internal static readonly Color Danger = Hex(0xD35B55);
 
     static Font font, boldFont, fallback;
-    static bool triedBundled;
     static Texture2D white;
     static GUISkin skin;
     static float skinScale;
@@ -56,12 +54,6 @@ static class Hud
         get
         {
             if (font != null) return font;
-            if (!triedBundled)
-            {
-                triedBundled = true;
-                font = Bundled();
-                if (font != null) return font;
-            }
             font = Loaded("Roboto-Medium");
             if (font != null)
             {
@@ -76,29 +68,6 @@ static class Hud
             Entry.Log.LogInfo($"HUD font until Roboto loads: {fallback.name}" + (asset != null ? $" (from {asset.name})" : " (no game font found)"));
             return fallback;
         }
-    }
-
-    /// <summary>The Roboto Regular in the mod's folder, or null if it is missing or Unity cannot draw with it.</summary>
-    static Font Bundled()
-    {
-        string path = System.IO.Path.Combine(Application.streamingAssetsPath, "SeapowerSurvivors", "fonts", "Roboto-Regular.ttf");
-        try
-        {
-            if (System.IO.File.Exists(path))
-            {
-                // A name with a directory in it makes Unity load the file rather than look for an OS font.
-                var loaded = new Font(path) { hideFlags = HideFlags.DontUnloadUnusedAsset };
-                loaded.RequestCharactersInTexture("A", 16);
-                if (loaded.GetCharacterInfo('A', out _, 16))
-                {
-                    Entry.Log.LogInfo("HUD font: Roboto-Regular (bundled)");
-                    return loaded;
-                }
-            }
-            Entry.Log.LogWarning($"Could not use {path}");
-        }
-        catch (System.Exception e) { Entry.Log.LogWarning($"Could not load {path}: {e.Message}"); }
-        return null;
     }
 
     /// <summary>Roboto Bold, or null until it loads.</summary>

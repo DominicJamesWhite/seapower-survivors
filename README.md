@@ -1,112 +1,145 @@
-# seapower-survivors
+# Sea Power Survivors
 
-A survivors-like mode for Sea Power: one surface ship, timed waves of Soviet
-ships and aircraft, XP for kills, and a choice of upgrades on every level-up.
-These are applied live, mid-battle.
+A survivors-like mode for Sea Power. You sail a flagship and its escorts through
+a 20-minute run against waves of enemy ships and aircraft, earning XP for kills
+and choosing upgrades on every level-up. Upgrades apply live, mid-battle, and
+what you earn between runs buys new ships and permanent bonuses.
 
-It is a C# code mod loaded by AnchorChain under BepInEx, both already part of
-the Sea Power modding scene. The mission-file and JavaScript scripting routes
-cannot change a ship's stats at runtime, so a code mod is the only way to do
-this.
+It is a C# code mod loaded by [Anchor Chain](https://seapower-modders.github.io/AnchorChain/install-anchor-chain.html)
+under BepInEx. Numbers throughout are still being tuned.
 
-| Document | What it holds |
-|---|---|
-| [design.md](design.md) | The game design: hulls, XP, upgrades, waves, pickups |
-| [docs/combat-model.md](docs/combat-model.md) | How Sea Power's weapons, fire control and damage actually work |
-| [docs/hooks.md](docs/hooks.md) | Where in the game code each feature attaches |
-| [docs/balance.md](docs/balance.md) | Comparing weapon cards by numbers: the calculator and the damage log |
+## Build and install
 
-Most of `docs/` comes from decompiled code and shipped data, not
-from play; what has been seen working is listed under "Confirmed in game" in
-[docs/hooks.md](docs/hooks.md#confirmed-in-game).
-
-Game build examined: **0.8.4 Build 261002** (2 October 2026).
-
-## Build and run
+You need Sea Power and Anchor Chain installed. The mod is not on the Steam
+Workshop yet, so build it from source:
 
 ```
 dotnet build src/SeapowerSurvivors -c Release
 ```
 
-This builds against the installed game and copies `SeapowerSurvivors.dll`
-and `_info.ini` into `Sea Power_Data/StreamingAssets/SeapowerSurvivors/`.
+This builds against the installed game (last built against 0.8.7 Build 261021)
+and copies the DLL and everything in [mod/](mod/) into
+`Sea Power_Data/StreamingAssets/SeapowerSurvivors/`.
 
-- If the game lives somewhere other than
-  `D:\SteamLibrary\steamapps\common\Sea Power`, pass `-p:SeaPowerDir=...`.
+- If the game is not in `D:\SteamLibrary\steamapps\common\Sea Power`, pass
+  `-p:SeaPowerDir=...`.
 - To build without copying into the game, pass `-p:Deploy=false`.
 
-Code is loaded once per launch, so **restart the game after every build**.
-The mod logs to `<install>/BepInEx/LogOutput.log` under the source
-`Survivors`.
+Code is loaded once per launch, so restart the game after every build. The mod
+logs to `<install>/BepInEx/LogOutput.log` under the source `Survivors`.
 
-## Missions
+## Starting a run
 
-The mod adds a **Survivors** category to the Scenarios menu. The missions are
-plain INI files in [mod/missions/Survivors/](mod/missions/Survivors/). Each
-puts one of the ten flagships in open water between Iceland and the Faroes,
-with weapons Tight.
+The main menu has a **SURVIVORS** button on the right-hand edge, which opens the
+Survivors screen:
 
-| Mission | What happens |
+- **Location.** Ten sea areas, each with its best score so far. The areas are
+  the same as Quick Start's, with thanks to its author.
+- **Fleet.** Choose a flagship and which bought escorts and flights sail with it.
+  **Formation** opens a drag-to-place editor for their stations.
+- **Starting bonuses.** Permanent upgrades, bought rank by rank and refundable:
+  Rerolls, Banish, Growth, Luck and Flag transfer.
+- **Ensigns.** Twenty flags, each with one effect and a points cost. A run can
+  fly any mix up to 20 points.
+
+**Launch** writes the mission to
+`<persistent data>/SeapowerSurvivors/Survivors run.ini` and loads it. The profile
+is kept beside it, as `profile.txt`.
+
+The location cards show charts drawn from the game's terrain by
+[tools/render_charts.py](tools/render_charts.py), kept in [mod/art/](mod/art/).
+With Quick Start enabled, they show its paintings of each area instead.
+
+### Flagships
+
+| Flagship | How to get it |
 |---|---|
-| **Survivors - *flagship*** | A full run. The director starts it by itself 10 s in, because the file name starts with `Survivors - `. A win counts towards unlocks only in a flagship the profile owns |
-| **Test Range - *flagship*** | No enemies until you spawn them from the test panel, or press *Start run* there |
+| Sverdlov, Oliver Hazard Perry | Free |
+| Kidd, Sovremenny | 400 XP each |
+| Long Beach | Win in Perry or Kidd |
+| Slava | Win in Sverdlov or Sovremenny |
+| Iowa | Win in Sverdlov |
+| Bunker Hill | Win in Long Beach |
+| Kirov | Win in Slava or Iowa |
+| Kiev | Win in both Bunker Hill and Kirov |
+
+Soviet flagships fight NATO, and US flagships fight the Soviets. Starting ships
+cost 200 XP and flights 300. Each one bought sails as its counterpart in the
+flagship's own navy.
 
 ## The run
 
-- **The script.** [Director.cs](src/SeapowerSurvivors/Director.cs) runs the
-  row-by-row table in [Script.cs](src/SeapowerSurvivors/Script.cs).
-  Each 80-second row has a quota of enemy units kept alive, topped up as they die;
-  scripted spikes; and a mini-boss every four minutes. Surviving 20:00 of
-  mission time declares victory.
-- **XP.** [CombatHooks.cs](src/SeapowerSurvivors/CombatHooks.cs) pays XP for
-  kills and for enemy missiles our SAMs or CIWS shoot down. The values and
-  level curve are in [Progression.cs](src/SeapowerSurvivors/Progression.cs).
-- **Level-ups.** [LevelUpScreen.cs](src/SeapowerSurvivors/LevelUpScreen.cs)
-  pauses the game and offers three upgrades from
-  [Upgrades.cs](src/SeapowerSurvivors/Upgrades.cs). Banked levels are shown
-  one after another.
-- **Status line.** One along the top shows time left, level and XP bar, hull,
-  kills, intercepts, live enemies and enemy missiles in flight.
-- **Upgrade rings.** Under it, [Rings.cs](src/SeapowerSurvivors/Rings.cs)
-  draws a ring per upgrade slot, a notch per rank with a dot at each
-  ability; hover one for what is in effect and what comes next.
+A run lasts 20:00 of mission time and is meant to be played at x1. Surviving it
+wins. Losing the flagship ends the run, unless Flag transfer passes the flag to
+an escort.
 
-## Launching a run
+- **XP.** Kills and enemy missiles shot down pay XP, with a boost that fades from
+  x3 to x1 over the first 7 minutes. XP is banked at the end of a run.
+- **Level-ups.** Each level pauses the game and offers three cards, then refills
+  every ship's magazines. Banked levels are shown one after another.
+- **Upgrade lines.** There are nine weapon lines of 20 ranks (Guns, Jammers,
+  SAMs, Anti-ship missiles, Torpedoes, Rocket mortars, Point defence,
+  Countermeasures and Air wing) and two fleet lines of 15 (Reaction and
+  Accuracy). A fleet can hold four weapon lines. Every fifth rank is a new
+  ability.
+- **Rarity.** A Common card gives one rank, Rare two, Epic three and Legendary
+  four.
+- **HUD.** A status line shows time, level and XP, hull, kills, intercepts,
+  enemies and missiles in flight. Rings beneath it show each upgrade's ranks, and
+  hovering one shows what is in effect and what comes next.
 
-The main menu has a **SURVIVORS** button on the right-hand edge of the
-screen. It opens the Survivors screen:
+### What you face
 
-- **Location.** One of ten areas. Each has the fleet's starting box, where
-  the enemy's ships come from, and where its aircraft fly from. The areas
-  are the same as Quick Start's (with thanks to its author). With Quick
-  Start enabled, the cards show its paintings of each area. To keep them
-  with Quick Start disabled, copy them by hand from its
-  `campaigns/qs-quick-battles/art/` folder into
-  `Sea Power_Data/StreamingAssets/SeapowerSurvivors/art/`. They are not
-  part of this repository: the art is Quick Start's author's.
-- **Fleet.** Pick a flagship, and buy escorts for its navy. Click a bought
-  escort to deselect it for the next run.
-- **Starting bonuses.** Permanent upgrades, bought rank by rank, which can
-  be refunded.
+- **Waves.** Each flagship has its own hand-set table of enemies, costs and
+  gates, in [Threats.cs](src/SeapowerSurvivors/Threats.cs). Missile ships and
+  aircraft wait until the fleet can answer them. Waves arrive together on spread
+  bearings, and ships spawn according to their own weapons' range.
+- **Pressure.** [Pressure.cs](src/SeapowerSurvivors/Pressure.cs) scales missile
+  salvos to the fleet's defences. Enemy missiles getting within 3 nm ease it
+  back, and a hit brings a breather.
+- **Mini-bosses.** They come at 4, 8, 12 and 16 minutes, and each drops a chest
+  with level-ups and sometimes a new ship or flight.
+- **Convoys and surface action groups.** These stay far beyond reach. Go after
+  them, send aircraft, or fire long-range missiles in the windows contact reports
+  open.
+- **Final assault.** Stand-off raids launch at 14:00 and 15:30. From 17:00, waves
+  come every 20 seconds with no breathers.
 
-*Launch* writes the mission file to
-`<persistent data>/SeapowerSurvivors/Survivors run.ini` and loads it. The
-choices are kept in the profile beside it.
+A run's score is Sea Power's own debrief score, doubled for a win. The best for
+each area is kept with the flagship, escorts and ensigns that earned it.
+
+## Missions
+
+The mod adds a **Survivors** category to the Scenarios menu, from the INI files
+in [mod/missions/Survivors/](mod/missions/Survivors/). Each puts one of the ten
+flagships in open water between Iceland and the Faroes, with weapons Tight.
+
+| Mission | What happens |
+|---|---|
+| **Survivors - *flagship*** | A full run, which starts by itself. A win counts towards unlocks only in a flagship the profile owns |
+| **Test Range - *flagship*** | No enemies until you spawn them from the test panel or press *Start run* there |
 
 ## Test panel
 
-**Ctrl+F6** opens the test panel in any mission with a player ship. On the
-main menu, it holds the same shop and launcher as the Survivors screen. The game
-binds Ctrl+F3, Ctrl+F5 and Ctrl+F7; QuickStart takes Ctrl+F8;
-SeapowerMultiplayer takes Ctrl+F9 to Ctrl+F11. Windows swallows Ctrl+Shift+0.
+**Ctrl+F6** opens the test panel in any mission with a player ship. A run started
+from it banks no XP.
 
 | Section | Does |
 |---|---|
-| Run | Start or stop a run, skip a minute, grant a level, set the threat multiplier (x0.5, x1, x2) live, and pretend to have air cover |
-| Spawn enemy | Spawns an Osa I, Sovremenny or Slava at 10, 20 or 40 nm on a random bearing, or a pair of Tu-16K bombers at 160–175 nm. Each is told where you are, set to weapons Free and sent toward you |
-| Apply to your ship | Mast +30 m (radar horizon), low-altitude search, radar gain +3 dB, launcher reload halved, or a rearm with the game's own `RearmAll` |
-| Detection tab | Each search radar's antenna height, range and altitude floor; then every enemy unit and missile, either SEEN (and by which radars) or HIDDEN, with what stops each radar: role, altitude window, max range, horizon, terrain or power |
-| Weapons tab | Launcher reloads and loaded rounds, and magazine counts |
-| Events | The last few actions and deaths, with XP |
+| Run | Start or stop a run, skip a phase, grant a level or chest, send a convoy or SAG, set the threat multiplier (x0.5, x1, x2), and pretend to have air cover |
+| Spawn enemy | Spawns ships from the navy you are fighting at 10 to 40 nm, or air groups |
+| Apply to your ship | Raise the mast, low-altitude search, radar gain, halve launcher reload, rearm, and write AA, fire control or damage reports to the log |
+| Detection tab | What each radar can see, and what stops it seeing each enemy |
+| Weapons tab | Launcher reloads, loaded rounds and magazines |
+| Upgrades tab | Add ranks to any line |
+| Events | The last few actions and deaths, also written to the log |
 
-Everything on the event feed is also written to the log.
+On the main menu, the same panel holds the shop and launcher, plus +500 XP, +Win
+and a profile wipe.
+
+## Balance tools
+
+[tools/balance.py](tools/balance.py) reads the upgrade paths and the game's own
+weapon data to compare cards by numbers, and can check its model against a real
+run. [DamageLog.cs](src/SeapowerSurvivors/DamageLog.cs) records what each weapon
+did, in `<persistent data>/SeapowerSurvivors/damage/`.

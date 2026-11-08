@@ -34,11 +34,11 @@ sealed class Area
     public string Art => $"campaigns/qs-quick-battles/art/{Id}.png";
 
     /// <summary>
-    /// Where a local copy of Quick Start's paintings is looked for when that
-    /// mod is disabled: an art folder in this mod's install folder.
+    /// The mod's own charts of each area, from tools/render_charts.py. Found
+    /// from the DLL because a Workshop copy is not under StreamingAssets.
     /// </summary>
     public static string LocalArtFolder =>
-        System.IO.Path.Combine(UnityEngine.Application.streamingAssetsPath, "SeapowerSurvivors", "art");
+        System.IO.Path.Combine(System.IO.Path.GetDirectoryName(typeof(Area).Assembly.Location), "art");
 
     static GeoPosition[] Corners(double[,] corners) =>
         Enumerable.Range(0, corners.GetLength(0)).Select(i => At(corners[i, 0], corners[i, 1])).ToArray();

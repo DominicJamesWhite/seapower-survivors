@@ -3,8 +3,7 @@
 
 Reads the upgrade paths from src/SeapowerSurvivors/Upgrades.cs and every weapon
 and hull stat from the game's own INI files, so it follows both as they change.
-The damage rules are ported from the decompiled game; docs/balance.md lists them
-and what the model leaves out.
+The damage rules are ported from the decompiled game.
 
     python tools/balance.py                              every flagship, full lines
     python tools/balance.py cards wp_rkr_slava usn_cg_belknap     what each rank adds

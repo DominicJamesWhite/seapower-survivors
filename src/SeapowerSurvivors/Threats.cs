@@ -27,7 +27,7 @@ sealed class BossPlan
     public Group Pick(Run run) => When == null || When(run) ? Group : Otherwise;
 }
 
-/// <summary>Who one starting ship faces and when. The tables are docs/threat-plan.md, set by hand.</summary>
+/// <summary>Who one starting ship faces and when. The tables are set by hand.</summary>
 sealed class ThreatPlan
 {
     /// <summary>Budget and unit limit are given at these minutes, and run straight between them.</summary>
@@ -108,7 +108,7 @@ sealed class ThreatPlan
 }
 
 /// <summary>
-/// The hand-set tables of docs/threat-plan.md. Danger is per ship, because the
+/// The hand-set tables. Danger is per ship, because the
 /// same enemy is a different problem for each, and gates are per ship, because
 /// a score cannot tell an old SAM from a good one.
 /// </summary>
