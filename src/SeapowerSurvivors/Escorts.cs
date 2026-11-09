@@ -154,7 +154,7 @@ static class Escorts
     internal static List<Escort> Offer(Run run, int tier, ICollection<Escort> shown = null)
     {
         var pool = LevelUpScreen.Shuffled(NavyOf(run.Ship._obp._objectIniName).Where(e => e.Tier == tier).Select(WithEnsigns).Where(e => e != null), shown).ToList();
-        var missing = Role.Sams | Role.Guns | Role.AntiShip | Role.Ciws | Role.AirCover | Role.Awacs | Role.AirStrike;
+        var missing = Ensigns.Usable(Role.Sams | Role.Guns | Role.AntiShip | Role.Ciws | Role.AirCover | Role.Awacs | Role.AirStrike);
         missing &= ~FleetRoles(run);
         var offer = new List<Escort>();
         var filler = pool.FirstOrDefault(e => (e.Roles & missing) != 0);
@@ -163,7 +163,7 @@ static class Escorts
         return offer;
     }
 
-    /// <summary>The Argentine ensign's strike flights, by aircraft: the same aircraft and number, on its own unguided loadout. Tu-22M2s have none.</summary>
+    /// <summary>The bomb-armed strike flights the Argentine and Dutch ensigns offer, by aircraft: the same aircraft and number, on its own unguided loadout. Tu-22M2s have none.</summary>
     static readonly Dictionary<string, (string loadout, string weapon)> BombLoadouts = new Dictionary<string, (string, string)>
     {
         ["usn_a-6e"] = ("Strike", "Mk 83 bombs"),
@@ -182,7 +182,8 @@ static class Escorts
     /// </summary>
     static Escort WithEnsigns(Escort escort)
     {
-        if (!Ensigns.Active(Ensigns.IronBombs) || (escort.Roles & Role.AirStrike) == 0 || escort.Type == "usn_a-7e" || escort.Type == "wp_yak-38") return escort;
+        bool bombsOnly = Ensigns.Active(Ensigns.IronBombs) || Ensigns.Active(Ensigns.LongCiws);
+        if (!bombsOnly || (escort.Roles & Role.AirStrike) == 0 || escort.Type == "usn_a-7e" || escort.Type == "wp_yak-38") return escort;
         if (!BombLoadouts.TryGetValue(escort.Type, out var bombs)) return null;
         if (!bombVersions.TryGetValue(escort, out var version))
         {
@@ -201,7 +202,7 @@ static class Escorts
 
     /// <summary>What a card says the ship would add.</summary>
     /// <summary>What an escort would bring that the fleet has none of.</summary>
-    internal static Role Missing(Run run, Escort escort) => escort.Roles & ~FleetRoles(run);
+    internal static Role Missing(Run run, Escort escort) => Ensigns.Usable(escort.Roles) & ~FleetRoles(run);
 
     /// <summary>Roles as a card lists them.</summary>
     internal static string RoleList(Role roles)
@@ -276,7 +277,7 @@ static class Escorts
             return;
         }
         // Fighters are what reach stand-off bombers, so their raids may now come.
-        if ((escort.Roles & Role.AirCover) != 0) run.Has.Add(Capability.AirCover);
+        if ((Ensigns.Usable(escort.Roles) & Role.AirCover) != 0) run.Has.Add(Capability.AirCover);
         Boosts.ApplyFleet(run);
         TestPanel.Report($"{escort.Name} joins the fleet ({joined}/{count} aircraft, {stores} stores)");
     }

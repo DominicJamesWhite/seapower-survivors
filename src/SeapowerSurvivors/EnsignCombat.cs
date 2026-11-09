@@ -128,6 +128,8 @@ static class EnsignCombat
 
     /// <summary>Ships whose radars an EMP has shut down, and when they come back.</summary>
     static readonly Dictionary<ObjectBase, double> darkened = new Dictionary<ObjectBase, double>();
+    /// <summary>The radars a pulse switched off, so its end brings back those and not ones battle damage took out.</summary>
+    static readonly Dictionary<ObjectBase, HashSet<SensorSystemRadar>> pulsedRadars = new Dictionary<ObjectBase, HashSet<SensorSystemRadar>>();
 
     internal static bool IsDark(ObjectBase unit) => darkened.ContainsKey(unit);
 
@@ -159,8 +161,21 @@ static class EnsignCombat
 
     static void SetDark(ObjectBase ship, bool dark)
     {
-        foreach (var radar in ship._obp._searchRadarSystems.Concat(ship._obp._targetingRadarSystems).Concat(ship._obp._airSearchRadars).Concat(ship._obp._surfaceSearchRadars))
-            if (radar != null) radar.Inoperable.Value = dark;
+        if (!pulsedRadars.TryGetValue(ship, out var pulsed)) pulsedRadars[ship] = pulsed = new HashSet<SensorSystemRadar>();
+        if (dark)
+        {
+            foreach (var radar in ship._obp._searchRadarSystems.Concat(ship._obp._targetingRadarSystems).Concat(ship._obp._airSearchRadars).Concat(ship._obp._surfaceSearchRadars))
+                if (radar != null && !radar.Inoperable.Value)
+                {
+                    radar.Inoperable.Value = true;
+                    pulsed.Add(radar);
+                }
+        }
+        else
+        {
+            foreach (var radar in pulsed) radar.Inoperable.Value = false;
+            pulsedRadars.Remove(ship);
+        }
         // With its fire control down it holds fire, and Spawner will not re-alert it.
         ship._weaponStatus = dark ? ObjectBase.WeaponStatus.Hold : ObjectBase.WeaponStatus.Free;
     }
@@ -170,7 +185,11 @@ static class EnsignCombat
         double now = GameTime.missionElapsedTime;
         foreach (var (ship, until) in darkened.ToList())
         {
-            if (ship == null || ship.IsDestroyed) darkened.Remove(ship);
+            if (ship == null || ship.IsDestroyed)
+            {
+                darkened.Remove(ship);
+                pulsedRadars.Remove(ship);
+            }
             else if (now >= until)
             {
                 darkened.Remove(ship);
@@ -192,8 +211,8 @@ static class EnsignCombat
         if (run.Hoisted.Count == 0) return;
         if (run.Hoisted.Contains(Ensigns.LongCiws))
             foreach (var ship in run.Fleet.Where(s => s != null && !s.IsDestroyed && !s.IsAirUnit))
-                // A launcher that also holds Harpoons, ASROC or Tomahawks stays in action: NoAirMissiles keeps its SAMs from being fired.
-                foreach (var launcher in Boosts.SamLaunchers(ship).Where(l => Boosts.LauncherAmmo(l).All(Boosts.AirToAir)))
+                // A launcher that also holds ASROC stays in action: NoMissiles keeps its missiles from being fired.
+                foreach (var launcher in ship._obp._launcherWeapons.Where(Boosts.MissilesOnly))
                     launcher.Inoperable.Value = true;
 
         if (run.Hoisted.Contains(Ensigns.TorpedoEcm)) EcmFit.Tick(run);
@@ -282,11 +301,12 @@ static class EnsignCombat
     }
 
     /// <summary>
-    /// With the Dutch ensign up, no one in the fleet is offered a SAM or air-to-air
-    /// missile to fire. A launcher can be marked out of action, but a pylon cannot.
+    /// With the Dutch ensign up, the AI is offered no missile to fire, so it picks
+    /// what it can use instead. A launcher can be marked out of action, but a
+    /// pylon cannot.
     /// </summary>
     [HarmonyPatch(typeof(AI), nameof(AI.AmmoForTarget))]
-    static class NoAirMissiles
+    static class NoMissiles
     {
         static readonly AccessTools.FieldRef<AI, ObjectBase> AiShip = AccessTools.FieldRefAccess<AI, ObjectBase>("_baseObject");
 
@@ -295,12 +315,20 @@ static class EnsignCombat
             if (!Ensigns.Active(Ensigns.LongCiws) || __result == null || __result.Count == 0) return;
             var ship = AiShip(__instance);
             if (!InFleet(ship)) return;
-            __result.RemoveAll(name => ship.getAmmunitionByName(name)?._ap is AmmunitionParameters ap && Boosts.AirToAir(ap));
+            __result.RemoveAll(name => ship.getAmmunitionByName(name)?._ap is AmmunitionParameters ap && Ensigns.Withheld(ap));
         }
     }
 
+    /// <summary>The same for orders from anywhere else: the player's own, and the game's strike missions, which pick their rounds themselves.</summary>
+    [HarmonyPatch(typeof(ObjectBase), nameof(ObjectBase.AddEngageTask))]
+    static class NoMissileOrders
+    {
+        static bool Prefix(ObjectBase __instance, EngageTask engageTask) =>
+            !(engageTask?._ammunition?._ap is AmmunitionParameters ap && Ensigns.Withheld(ap) && InFleet(__instance));
+    }
+
     /// <summary>
-    /// At ×100 a CIWS's tracers would each live for minutes, by the game's sum of
+    /// At ×10 a CIWS's tracers would each live for minutes, by the game's sum of
     /// three times its flight to full range. Its real hits are rolled, not flown,
     /// so a short-lived tracer costs nothing but keeps the effects pool small.
     /// </summary>
@@ -363,6 +391,7 @@ static class EnsignCombat
         ignored = null;
         nextCloseCall = 0.0;
         darkened.Clear();
+        pulsedRadars.Clear();
         EcmFit.Reset();
     }
 

@@ -98,7 +98,7 @@ sealed class LevelUpCard
         string kind = escort.IsAir ? (total > 1 ? $"{total} aircraft" : "Aircraft") : (total > 1 ? $"{total} ships" : "Ship");
         var card = new LevelUpCard { title = escort.Name + Ensigns.Times(multiple), status = $"{kind} · Tier {escort.Tier}" };
         var adds = Escorts.Missing(run, escort);
-        var carries = escort.Roles & ~adds;
+        var carries = Ensigns.Usable(escort.Roles) & ~adds;
         if (adds != Role.None)
         {
             card.Add(Part.Label, "ADDS TO YOUR FLEET");

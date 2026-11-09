@@ -9,8 +9,10 @@ namespace SeapowerSurvivors;
 
 /// <summary>
 /// The German ensign: ships with torpedo launchers are refitted with the EA-6B
-/// Prowler's AN/ALQ-99, a real game jammer, and the launchers stay out of
-/// action. It has no 3D model, only a dummy mount, as a missile's jammer has. The
+/// Prowler's AN/ALQ-99, a real game jammer, and give up their torpedoes and
+/// torpedo-carrying rockets. The launchers stay in action, so one that shares
+/// a magazine with SAMs still fires them. The jammer has no 3D model, only a
+/// dummy mount, as a missile's jammer has. The
 /// player switches it on and off and aims it as on a Prowler; the Jammers
 /// upgrade line, which takes the Torpedoes line's place, widens and extends it.
 /// </summary>
@@ -69,8 +71,7 @@ static class EcmFit
         {
             var tubes = Boosts.TorpedoLaunchers(ship).ToList();
             if (tubes.Count == 0) continue;
-            // Damage control can bring a launcher back.
-            foreach (var tube in tubes) tube.Inoperable.Value = true;
+            foreach (var tube in tubes) Strip(ship, tube);
             // A null entry is a ship whose refit already failed and was reported.
             if (!fitted.TryGetValue(ship, out var jammer)) TryFit(ship, out jammer);
             if (jammer == null) continue;
@@ -79,6 +80,45 @@ static class EcmFit
             Forget(jammer._ecm);
             Work(run, ship, jammer, enemies, missiles);
         }
+    }
+
+    /// <summary>
+    /// Takes a launcher's torpedo rounds off the ship. Each magazine keeps its
+    /// entry at a count of none: a rearm refills to the starting count, and the
+    /// entry is how this ship is still known to have had torpedoes.
+    /// </summary>
+    static void Strip(ObjectBase ship, WeaponSystemLauncher launcher)
+    {
+        var magazine = launcher._vwp._associatedMagazine;
+        foreach (var store in new[] { magazine, launcher._vwp._campaignMagazine })
+        {
+            if (store == null) continue;
+            foreach (var round in store._ammunitionList.Where(a => a?._ap != null && Boosts.TorpedoRound(a._ap)))
+            {
+                if (!store._isCampaignMagazine && round._ap._magazineAmmoCount > 0)
+                    ship.changeAmmunitionAmount(round._ap._ammunitionFileName, -round._ap._magazineAmmoCount);
+                round._ap._magazineAmmoCount = 0;
+                store._initialAmmoCount[round] = 0;
+            }
+        }
+
+        bool unloaded = false;
+        foreach (var container in launcher._containers)
+        {
+            if (container._weapons.Any(w => w?._ap != null && Boosts.TorpedoRound(w._ap)))
+            {
+                container.unload(returnAmmo: false);
+                container.ClearPartialPack();
+                unloaded = true;
+            }
+            // Without a magazine, a rearm refills the container to this count.
+            if (magazine == null && container._initialAmmunition?._ap != null && Boosts.TorpedoRound(container._initialAmmunition._ap))
+                container._initialAmmoCount = 0;
+        }
+        if (!unloaded) return;
+        launcher.setOnWeaponAmmunition(null);
+        // A launcher that shares its magazine loads the other rounds, as after a rearm.
+        if (magazine != null && magazine.getTotalAmmunitionCount() > 0) launcher.StartReload(instantReload: true);
     }
 
     static bool TryFit(ObjectBase ship, out SensorSystemECM jammer)

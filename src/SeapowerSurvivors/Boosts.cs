@@ -319,7 +319,8 @@ static class Boosts
                 // chance; clearing it makes the CIWS refit to the new values.
                 CiwsCalibration(ciws) = -1f;
             }
-            ApplyCiwsReach(ciws, cannonRange);
+            // The Dutch ensign is for ships' CIWS: an aircraft's cannon takes only the Guns line.
+            ApplyCiwsReach(ciws, ship.IsAirUnit ? cannonRange : Ensigns.CiwsReach);
             if (!ship.IsAirUnit) continue;
             ciws._vwp._magazineReloadTime = Base(ciws, "reload", ciws._vwp._magazineReloadTime) * gunReload;
             foreach (var ap in CiwsAmmo(ciws))
@@ -388,12 +389,12 @@ static class Boosts
     const float NoWireBreakKnots = 999f;
 
     /// <summary>
-    /// The Dutch ensign. A CIWS works out its reach once from its round's range
-    /// and fits its hit model to it, so both are cleared to be done again.
+    /// The Dutch ensign on a ship, the Guns line's range on an aircraft. A CIWS
+    /// works out its reach once from its round's range and fits its hit model
+    /// to it, so both are cleared to be done again.
     /// </summary>
-    static void ApplyCiwsReach(WeaponSystemCIWS ciws, float cannonRange)
+    static void ApplyCiwsReach(WeaponSystemCIWS ciws, float reach)
     {
-        float reach = Ensigns.CiwsReach * cannonRange;
         foreach (var ap in CiwsAmmo(ciws))
         {
             float range = Base(ap, "rangeUnity", ap._launchRangesInUnity.y) * reach;
@@ -1428,6 +1429,13 @@ static class Boosts
 
     internal static bool AirToAir(AmmunitionParameters ap) => ap._targetType == Ammunition.Target.AAW;
 
+    /// <summary>A launcher with nothing but missiles to fire: the Dutch ensign takes it out of action.</summary>
+    internal static bool MissilesOnly(WeaponSystemLauncher launcher)
+    {
+        var ammo = LauncherAmmo(launcher).ToList();
+        return ammo.Count > 0 && ammo.All(ap => ap._type == Ammunition.Type.Missile);
+    }
+
     /// <summary>Bombs and aerial rockets are marked for surface targets too, and belong to the Air wing line.</summary>
     internal static bool AntiShipMissile(AmmunitionParameters ap) =>
         ap._targetType == Ammunition.Target.ASuW && ap._type != Ammunition.Type.Torpedo && !StrikeStore(ap);
@@ -1436,6 +1444,9 @@ static class Boosts
 
     static bool TorpedoCarrier(AmmunitionParameters ap) =>
         ap._hasSubmunition && ap._submunitionType == Ammunition.Type.Torpedo && !string.IsNullOrEmpty(ap._submunitionFileName);
+
+    /// <summary>A torpedo, or a rocket or missile that carries one.</summary>
+    internal static bool TorpedoRound(AmmunitionParameters ap) => ShipTorpedo(ap) || TorpedoCarrier(ap);
 
     /// <summary>A torpedo that, as the game gave it, can only be fired at submarines.</summary>
     static bool AntiSubmarineOnly(Ammunition.Target target, bool hadSecondary) =>

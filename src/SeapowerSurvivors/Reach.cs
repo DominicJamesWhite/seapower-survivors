@@ -44,7 +44,7 @@ static class Reach
         {
             float search = HorizonNm(ship, target);
             foreach (var weapon in ship._obp._weaponSystems.Where(w => w?._vwp != null && !w.Inoperable.Value))
-                foreach (var ap in AntiSurfaceAmmo(weapon))
+                foreach (var ap in AntiSurfaceAmmo(weapon).Where(a => !Ensigns.Withheld(a)))
                     best = UnityEngine.Mathf.Max(best, WeaponReachNm(ship, weapon, ap, target, search));
         }
         return UnityEngine.Mathf.Max(best, MinimumNm);

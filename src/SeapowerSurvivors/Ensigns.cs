@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using SeaPower;
 
 namespace SeapowerSurvivors;
 
@@ -48,7 +49,7 @@ static class Ensigns
     public static readonly Ensign HeavyMissiles = new Ensign("heavy-missiles", "Soviet Naval Ensign", "Soviet Navy", 500, 7,
         "All SAMs, ASMs and AAMs do 2× damage");
     public static readonly Ensign LongCiws = new Ensign("long-ciws", "Dutch Tricolour", "Royal Netherlands Navy", 900, 8,
-        "CIWS range ×100. Guns aim 4× as well, and fire and reload 2× as fast. SAMs and air-to-air missiles are disabled");
+        "CIWS range ×10. Guns aim 4× as well, and fire and reload 2× as fast. All missiles are disabled");
     public static readonly Ensign EmpMortars = new Ensign("emp-mortars", "St Andrew's Flag", "Russian Navy", 700, 5,
         "Mortar rounds are EMPs instead of warheads: radars and fire control go dark. Each mortar rank widens the pulse and makes it last longer. Sovremenny, Slava, Kirov and Kiev only");
     public static readonly Ensign DoubleAir = new Ensign("double-air", "Australian White Ensign", "Royal Australian Navy", 600, 4,
@@ -98,7 +99,7 @@ static class Ensigns
     {
         (TorpedoEcm, FastTorpedoes), (TorpedoEcm, WireGuided),
         (FiveOfAKind, DoubleAir), (FiveOfAKind, IronBombs), (FiveOfAKind, ChestsTwice),
-        (LongCiws, DoubleAir),
+        (LongCiws, DoubleAir), (LongCiws, HeavyMissiles), (LongCiws, FastAsms),
     };
 
     /// <summary>The flagships with rocket mortars, for the one ensign that needs them.</summary>
@@ -147,14 +148,20 @@ static class Ensigns
     internal static float TorpedoSpeed => Active(FastTorpedoes) ? 3f : 1f;
     internal static float TorpedoReach => (Active(FastTorpedoes) ? 3f : 1f) * (Active(LongRange) ? 3f : 1f);
     internal static float MortarReach => Active(LongRange) ? 3f : 1f;
-    internal static float CiwsReach => Active(LongCiws) ? 100f : 1f;
+    internal static float CiwsReach => Active(LongCiws) ? 10f : 1f;
     internal static bool TorpedoesTargetShips => Active(FastTorpedoes) || Active(WireGuided);
 
     /// <summary>Upgrade lines with nothing left to act on.</summary>
     internal static bool Bars(Upgrade line) =>
-        line == Upgrades.Sams && Active(LongCiws) ||
+        (line == Upgrades.Sams || line == Upgrades.AntiShip) && Active(LongCiws) ||
         line == Upgrades.Torpedoes && Active(TorpedoEcm) ||
         line == Upgrades.Jammers && !Active(TorpedoEcm);
+
+    /// <summary>The Dutch ensign: a round no one in the fleet may fire. Rocket-thrown torpedoes, mortars, rockets and bombs are not missiles to the game.</summary>
+    internal static bool Withheld(AmmunitionParameters ap) => Active(LongCiws) && ap._type == Ammunition.Type.Missile;
+
+    /// <summary>The roles an escort can actually fill under the ensigns flown.</summary>
+    internal static Role Usable(Role roles) => Active(LongCiws) ? roles & ~(Role.Sams | Role.AntiShip | Role.AirCover) : roles;
 
     /// <summary>What the Australian ensign multiplies a flight by, wherever it joins from. Ships are not touched.</summary>
     internal static int AircraftFactor(IEnumerable<Ensign> hoisted, Escort escort) =>
