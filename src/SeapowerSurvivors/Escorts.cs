@@ -70,7 +70,7 @@ static class Escorts
     /// <summary>Clear of that minimum by this much, so the target is still outside it when the crew has a solution.</summary>
     const float StandOffMarginNm = 25f;
     const float StandOffSearchStepNm = 10f, StandOffSearchNm = 300f, StandOffBearingStep = 15f;
-    /// <summary>An AS-4 will not launch below 10,000 ft, and a Backfire refitted from a Yak would be flying lower.</summary>
+    /// <summary>An AS-4 will not launch below 10,000 ft, so Backfires join well above it.</summary>
     internal const float StandOffAltitudeFt = 30000f;
     const float UnityPerNm = 27.559496f;
 
@@ -182,7 +182,7 @@ static class Escorts
     /// </summary>
     static Escort WithEnsigns(Escort escort)
     {
-        bool bombsOnly = Ensigns.Active(Ensigns.IronBombs) || Ensigns.Active(Ensigns.LongCiws);
+        bool bombsOnly = Ensigns.BombsOnly;
         if (!bombsOnly || (escort.Roles & Role.AirStrike) == 0 || escort.Type == "usn_a-7e" || escort.Type == "wp_yak-38") return escort;
         if (!BombLoadouts.TryGetValue(escort.Type, out var bombs)) return null;
         if (!bombVersions.TryGetValue(escort, out var version))
@@ -249,13 +249,14 @@ static class Escorts
         TestPanel.Report($"{escort.Name} {ship.Name.Value} joins the fleet");
     }
 
-    static void JoinFlight(Run run, Escort escort, int copy)
+    /// <param name="size">How many join, for a flight sized by something other than its card and the ensigns.</param>
+    internal static void JoinFlight(Run run, Escort escort, int copy, int? size = null)
     {
         var flagship = run.Ship;
         float heading = flagship.transform.eulerAngles.y;
         int joined = 0, stores = 0;
         // The Australian ensign: every flight, from the start or a card, has twice the aircraft.
-        int count = escort.Count * Ensigns.AircraftFactor(run.Hoisted, escort);
+        int count = size ?? escort.Count * Ensigns.AircraftFactor(run.Hoisted, escort);
         for (int i = 0; i < count; i++)
         {
             // Abreast, a mile apart, off the flagship's starboard beam.

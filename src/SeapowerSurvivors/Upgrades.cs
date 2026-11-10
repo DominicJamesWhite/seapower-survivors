@@ -31,7 +31,7 @@ enum Stat
     Reach,
     /// <summary>Flights rehang their pylons in the air every few minutes, not only at level-ups.</summary>
     Resupply,
-    /// <summary>Strike flights move one step up their refit ladder: a better loadout, or a better aircraft.</summary>
+    /// <summary>Strike and fighter flights move one step up their refit ladder: a better loadout, or a better aircraft.</summary>
     Refit,
     /// <summary>A rank that grants an <see cref="Unlock"/>, and nothing else.</summary>
     Ability,
@@ -220,7 +220,7 @@ static class Upgrades
             Name = "Guns", Short = "Guns", Icon = "gun", Kind = Kind.Weapon, Systems = s => Boosts.Guns(s).Concat<WeaponSystem>(Boosts.AircraftCannons(s)),
             Path = new[]
             {
-                opening, opening, early, early, new Step(Stat.AntiAir, 3f, "Every gun engages aircraft out to 15 km, with proximity fuzes and AA fire control that re-aims every second", "Anti-air fire"),
+                opening, opening, early, early, new Step(Stat.AntiAir, 3f, "Every gun engages aircraft, with proximity fuzes and AA fire control that re-aims every second", "Anti-air fire"),
                 late, late, late, late, new Step(Stat.Fuze, 2f, "Flak bursts reach 2× as far", "Wide bursts"),
                 late, late, late, late, Step.Ability(HeavyShells = new Unlock("Heavy shells", "Shells hit 2× as hard, on top of earlier ranks")),
             },
@@ -441,47 +441,54 @@ static class Upgrades
     /// <summary>
     /// Three refits, air resupply every minute and every weapon an aircraft
     /// fires ×4 over the path, on top of what the anti-ship, SAM and gun lines
-    /// give the same rounds. Refits take strike flights from unguided bombs to
-    /// guided ones to Harpoons or AS-4s (see <see cref="Refits"/>). A flight
+    /// give the same rounds. Air-to-air missiles gain little from a bigger
+    /// warhead, so the damage ranks also add 20 points of hit chance to them,
+    /// on top of the SAM line's. Refits take strike flights from unguided bombs to
+    /// guided ones and on to Harpoons, the last bringing a Soviet wing a Backfire
+    /// for each strike aircraft instead, and fighters from Phantoms to Phoenix
+    /// Tomcats or from MiG-23s to MiG-25s (see <see cref="Refits"/>). A flight
     /// with no carrier is useless once its pylons are empty, so the rest of
     /// the line keeps them full. Offered for chest and starting flights only:
     /// a Kiev's own aircraft rearm on its deck, and no refit reaches them,
     /// though the line's damage does.
-    /// Under the Argentine ensign flights keep their iron bombs, so the
-    /// refits give way to the bombs and the airframes that carry them.
+    /// Under the Argentine and Dutch ensigns flights carry only bombs, so the
+    /// refits give way to the bombs, and to the airframes of every aircraft,
+    /// fighters included.
     /// </summary>
     public static readonly Upgrade AirWing = MakeAirWing();
 
     static Upgrade MakeAirWing()
     {
-        var d = new Step(Stat.Damage, 1.1892f, "Every weapon your aircraft fire hits {0}× as hard");
+        var d = Step.Blend(
+            new Step(Stat.Damage, 1.1892f, "Every weapon your aircraft fire hits {0}× as hard"),
+            Step.Chance(Stat.KillChance, 0.25f, 0.3f, "Air-to-air missile hit chance +{0} points"));
         var r = new Step(Stat.Reload, 0.8409f, "Air resupply comes {0}× as often");
         var resupply = new Step(Stat.Resupply, 1f, "Flights rearm in the air every 4 minutes, not only at level-ups", "Air resupply");
 
         var bombs = Step.Blend(
             new Step(Stat.Damage, 1.1892f, "Bombs and rockets hit {0}× as hard"),
             new Step(Stat.Accuracy, 0.8691f, "Bombs land {0}× as close"));
-        var agile = Step.Blend(r, new Step(Stat.Turn, 1.1f, "Strike aircraft turn {0}× as hard"));
+        var agile = Step.Blend(r, new Step(Stat.Turn, 1.1f, "Aircraft turn {0}× as hard"));
         var decoys = Step.Blend(r, Step.Chance(Stat.Spoof, 0.25f, 0.6f, "Aircraft chaff spoof chance +{0} points"));
         Step[] ironBombs =
         {
-            bombs, bombs, bombs, bombs, new Step(Stat.Speed, 1.25f, "Strike aircraft fly 1.25× as fast", "Uprated engines"),
+            bombs, bombs, bombs, bombs, new Step(Stat.Speed, 1.25f, "Aircraft fly 1.25× as fast", "Uprated engines"),
             bombs, bombs, bombs, bombs, resupply,
-            agile, agile, agile, agile, new Step(Stat.Rcs, 0.5f, "Strike aircraft have half the radar signature", "Radar-absorbent paint"),
-            decoys, decoys, decoys, decoys, new Step(Stat.Speed, 1.2f, "Strike aircraft fly 1.2× as fast again", "Stripped airframe"),
+            agile, agile, agile, agile, new Step(Stat.Rcs, 0.5f, "Aircraft have half the radar signature", "Radar-absorbent paint"),
+            decoys, decoys, decoys, decoys, new Step(Stat.Speed, 1.2f, "Aircraft fly 1.2× as fast again", "Stripped airframe"),
         };
 
         return new Upgrade
         {
             Name = "Air wing", Short = "Air wing", Icon = "air", Kind = Kind.Weapon,
             Systems = s => Run.Current != null && Run.Current.AirWing.ContainsKey(s) ? Boosts.Hardpoints(s, _ => true) : Enumerable.Empty<WeaponSystemHardpoint>(),
-            Variant = () => Ensigns.Active(Ensigns.IronBombs) ? ironBombs : null,
+            Variant = () => Ensigns.BombsOnly ? ironBombs : null,
             Path = new[]
             {
-                d, d, d, d, new Step(Stat.Refit, 1f, "A-7Es stay, with Walleye guided bombs; Yak-38s become Su-24As with AS-14s", "Guided weapons refit"),
+                d, d, d, d, new Step(Stat.Refit, 1f, "A-7Es stay, with Walleye guided bombs; Yak-38s become Su-24As with AS-14s; F-4Js become F-14As; MiG-23MSs become MiG-23MLDs", "Guided weapons refit"),
                 d, d, d, d, resupply,
-                r, r, r, r, new Step(Stat.Refit, 1f, "A-7Es become A-6Es with two Harpoons; Su-24As become Su-24Ms with AS-14s and KAB-500Ls", "New aircraft refit"),
-                r, r, r, r, new Step(Stat.Refit, 1f, "A-6Es and Hornets carry four Harpoons; Soviet flights become Tu-22M2s with three AS-4s", "Heavy loadout refit"),
+                r, r, r, r, new Step(Stat.Refit, 1f, "A-7Es become A-6Es with two Harpoons; Su-24As become Su-24Ms with AS-14s and KAB-500Ls; F-14As carry a Phoenix; MiG-23MLDs become MiG-25PDs", "New aircraft refit"),
+                r, r, r, r, new Step(Stat.Refit, 1f, "A-6Es and Hornets carry four Harpoons; F-14As carry four Phoenix; a Tu-22M2 with three AS-4s joins for each Soviet strike aircraft; MiG-25PDs fly 1.4× as fast and turn 1.5× as hard", "Heavy loadout refit"),
             },
         };
     }

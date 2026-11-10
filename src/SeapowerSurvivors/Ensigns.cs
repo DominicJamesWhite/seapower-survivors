@@ -149,6 +149,8 @@ static class Ensigns
     internal static float TorpedoReach => (Active(FastTorpedoes) ? 3f : 1f) * (Active(LongRange) ? 3f : 1f);
     internal static float MortarReach => Active(LongRange) ? 3f : 1f;
     internal static float CiwsReach => Active(LongCiws) ? 10f : 1f;
+    /// <summary>How many times the ready rounds of a ship's CIWS, and how many times faster it reloads.</summary>
+    internal static int CiwsStores => Active(LongCiws) ? 10 : 1;
     internal static bool TorpedoesTargetShips => Active(FastTorpedoes) || Active(WireGuided);
 
     /// <summary>Upgrade lines with nothing left to act on.</summary>
@@ -159,6 +161,13 @@ static class Ensigns
 
     /// <summary>The Dutch ensign: a round no one in the fleet may fire. Rocket-thrown torpedoes, mortars, rockets and bombs are not missiles to the game.</summary>
     internal static bool Withheld(AmmunitionParameters ap) => Active(LongCiws) && ap._type == Ammunition.Type.Missile;
+
+    /// <summary>
+    /// Strike flights carry bombs alone, under the Argentine ensign by choice and
+    /// the Dutch because their missiles are withheld. The Air wing line then runs
+    /// its bombs path: a refit would only hang missiles on them.
+    /// </summary>
+    internal static bool BombsOnly => Active(IronBombs) || Active(LongCiws);
 
     /// <summary>The roles an escort can actually fill under the ensigns flown.</summary>
     internal static Role Usable(Role roles) => Active(LongCiws) ? roles & ~(Role.Sams | Role.AntiShip | Role.AirCover) : roles;

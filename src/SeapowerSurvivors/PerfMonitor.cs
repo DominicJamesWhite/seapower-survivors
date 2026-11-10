@@ -5,6 +5,7 @@ using System.Text;
 using HarmonyLib;
 using SeaPower;
 using UnityEngine;
+using UnityEngine.LowLevel;
 
 namespace SeapowerSurvivors;
 
@@ -26,6 +27,8 @@ public class PerfMonitor : MonoBehaviour
     const float ReportEverySeconds = 10f;
     const float SpikeMs = 500f;
     const int TopMessages = 3;
+    const int TopEffects = 8;
+    const int TopPhases = 12;
 
     readonly List<float> frameMs = new List<float>();
     float windowStart = -1f, lastSpikeReport;
@@ -39,6 +42,73 @@ public class PerfMonitor : MonoBehaviour
     static int fixedSteps;
 
     static double TicksToMs(long ticks) => ticks * 1000.0 / Stopwatch.Frequency;
+
+    /// <summary>
+    /// Unity's own frame, step by step: a marker after every step of the player
+    /// loop charges the time since the last marker to that step. This is the
+    /// main thread's whole frame, engine work included (physics, particles,
+    /// rendering, UI), which the patches on GameMain cannot see.
+    /// </summary>
+    sealed class PhaseMark { }
+
+    static readonly List<string> phaseNames = new List<string>();
+    static long[] phaseTicks = new long[0];
+    static long lastMark;
+    static bool phasesInstalled;
+
+    static void InstallPhaseTimers()
+    {
+        if (phasesInstalled) return;
+        phasesInstalled = true;
+        var loop = PlayerLoop.GetCurrentPlayerLoop();
+        var top = loop.subSystemList;
+        phaseNames.Add("between phases");
+        for (int p = 0; p < top.Length; p++)
+        {
+            var steps = top[p].subSystemList;
+            if (steps == null || steps.Length == 0) continue;
+            var timed = new List<PlayerLoopSystem> { Marker(0) };
+            foreach (var step in steps)
+            {
+                phaseNames.Add($"{top[p].type?.Name}.{step.type?.Name}");
+                timed.Add(step);
+                timed.Add(Marker(phaseNames.Count - 1));
+            }
+            top[p].subSystemList = timed.ToArray();
+        }
+        phaseTicks = new long[phaseNames.Count];
+        lastMark = Stopwatch.GetTimestamp();
+        loop.subSystemList = top;
+        PlayerLoop.SetPlayerLoop(loop);
+        Entry.Log.LogInfo($"PERF: timing {phaseNames.Count - 1} player loop steps");
+    }
+
+    static PlayerLoopSystem Marker(int slot) => new PlayerLoopSystem
+    {
+        type = typeof(PhaseMark),
+        updateDelegate = () =>
+        {
+            long now = Stopwatch.GetTimestamp();
+            if (slot < phaseTicks.Length) phaseTicks[slot] += now - lastMark;
+            lastMark = now;
+        },
+    };
+
+    static string Phases(int frames)
+    {
+        if (frames == 0 || phaseTicks.Length == 0) return "no player loop timings";
+        var sb = new StringBuilder("player loop, ms a frame:");
+        double shown = 0, all = 0;
+        foreach (long t in phaseTicks) all += TicksToMs(t) / frames;
+        foreach (int i in Enumerable.Range(0, phaseTicks.Length).OrderByDescending(i => phaseTicks[i]).Take(TopPhases))
+        {
+            double ms = TicksToMs(phaseTicks[i]) / frames;
+            if (ms < 0.05) break;
+            shown += ms;
+            sb.Append($"\n    {ms:0.0} {phaseNames[i]}");
+        }
+        return sb.Append($"\n    {all - shown:0.0} everything else").ToString();
+    }
 
     [HarmonyPatch(typeof(GameMain), "Update")]
     static class TimeUpdate
@@ -92,7 +162,11 @@ public class PerfMonitor : MonoBehaviour
             return;
         }
         float now = Time.realtimeSinceStartup;
-        if (windowStart < 0f) StartWindow(now);
+        if (windowStart < 0f)
+        {
+            InstallPhaseTimers();
+            StartWindow(now);
+        }
 
         float ms = Time.unscaledDeltaTime * 1000f;
         frameMs.Add(ms);
@@ -115,6 +189,7 @@ public class PerfMonitor : MonoBehaviour
         gcAtStart = System.GC.CollectionCount(0);
         updateTicks = fixedTicks = lateTicks = 0;
         fixedSteps = 0;
+        System.Array.Clear(phaseTicks, 0, phaseTicks.Length);
         lock (logLock)
         {
             messages.Clear();
@@ -132,6 +207,7 @@ public class PerfMonitor : MonoBehaviour
             $"{sorted.Count / seconds:0.0} fps, frame median {Pct(0.5f):0} ms / 95% {Pct(0.95f):0} ms / worst {Pct(1f):0} ms, " +
             $"{System.GC.CollectionCount(0) - gcAtStart} GCs, heap {System.GC.GetTotalMemory(false) / (1024 * 1024)} MB");
         sb.Append("\n  ").Append(Loops(seconds, sorted.Count));
+        sb.Append("\n  ").Append(Phases(sorted.Count));
         sb.Append("\n  ").Append(Census(true));
         lock (logLock)
         {
@@ -177,12 +253,43 @@ public class PerfMonitor : MonoBehaviour
         if (!particles) return census;
         var systems = FindObjectsByType<ParticleSystem>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         int playing = 0, alive = 0;
+        var byEffect = new Dictionary<string, (int systems, int particles)>();
         foreach (var ps in systems)
         {
             if (!ps.isPlaying) continue;
             playing++;
-            alive += ps.particleCount;
+            int count = ps.particleCount;
+            alive += count;
+            string effect = EffectName(ps);
+            byEffect.TryGetValue(effect, out var sum);
+            byEffect[effect] = (sum.systems + 1, sum.particles + count);
         }
-        return census + $", particle systems {systems.Length} ({playing} playing, {alive} particles)";
+        int lights = FindObjectsByType<Light>(FindObjectsInactive.Exclude, FindObjectsSortMode.None).Count(l => l.enabled);
+        int trails = FindObjectsByType<TrailRenderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None).Count(t => t.enabled);
+        var sb = new StringBuilder(census).Append($", particle systems {systems.Length} ({playing} playing, {alive} particles), lights {lights}, trails {trails}");
+        if (alive > 0)
+        {
+            sb.Append("\n  top effects by particles:");
+            foreach (var e in byEffect.OrderByDescending(kv => kv.Value.particles).Take(TopEffects))
+                sb.Append($"\n    {e.Value.particles} ({e.Value.particles * 100 / alive}%) in {e.Value.systems}x {e.Key}");
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// An effect's name: the system's own and its parent's, since many are just
+    /// "Smoke" or "Particle System" under the prefab that says what they are.
+    /// Copies and numbered siblings count as one.
+    /// </summary>
+    static string EffectName(ParticleSystem ps)
+    {
+        var parent = ps.transform.parent;
+        return parent == null ? Tidy(ps.name) : $"{Tidy(parent.name)}/{Tidy(ps.name)}";
+    }
+
+    static string Tidy(string name)
+    {
+        string trimmed = name.Replace("(Clone)", "").TrimEnd(' ', '_', '(', ')', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9');
+        return trimmed.Length == 0 ? name : trimmed;
     }
 }

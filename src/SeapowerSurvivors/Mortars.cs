@@ -29,8 +29,12 @@ namespace SeapowerSurvivors;
 static class Mortars
 {
     const double CheckSeconds = 1.0;
-    /// <summary>How often Spotters puts ships in reach on the plot.</summary>
-    const double SpotSeconds = 10.0;
+    /// <summary>
+    /// How often Spotters puts ships in reach on the plot. A contact put there
+    /// lasts four data-link updates, 4 s as the game ships, so at the old 10 s
+    /// it was stale more often than not: this is well inside that.
+    /// </summary>
+    const double SpotSeconds = 2.0;
     /// <summary>Launchers fire this far inside their reach, so they never wait on "target too far".</summary>
     const float ReachMargin = 0.95f;
     const float UnityPerNm = 27.559496f;
@@ -40,6 +44,8 @@ static class Mortars
     const float SteerDegreesPerSecond = 10f;
     /// <summary>Under this, in game units (about 70 m), a round is on its way down and stops steering.</summary>
     const float SteerStopDistance = 1f;
+    /// <summary>How far past its aim point a hunting round keeps its nose pointed, so the game's range trim always has a fall to work with.</summary>
+    const float GlideMarginDegrees = 2f;
 
     static double nextCheck, nextSpot;
 
@@ -343,6 +349,14 @@ static class Mortars
     /// water, moves the aim point the game's range trim works to, and turns the
     /// round onto it. The aiming error stays in, so Accuracy still counts. A round
     /// whose target has sunk takes the nearest enemy ship instead.
+    /// <para>
+    /// The range trim can only shorten a shot: it bends the round's path down
+    /// onto the aim point, and finds no answer once the nose points at the sea
+    /// short of it, which is every round already on its way down when its
+    /// target moves off or a farther ship is taken. Such a round fell short. So
+    /// the nose is also brought up, at the same rate as the turn, until it
+    /// points just past the aim point, and the trim takes it from there.
+    /// </para>
     /// </summary>
     [HarmonyPatch]
     static class HuntingRounds
@@ -385,7 +399,19 @@ static class Mortars
             flat.y = 0f;
             float limit = SteerDegreesPerSecond * GameTime.fixedDeltaTime;
             float turn = Mathf.Clamp(Vector3.SignedAngle(flat, course, Vector3.up), -limit, limit);
-            rbu.transform.forward = Quaternion.AngleAxis(turn, Vector3.up) * forward;
+            forward = Quaternion.AngleAxis(turn, Vector3.up) * forward;
+
+            // Nose-up is positive; the line to the aim point on the sea is below the horizon.
+            float pitch = Mathf.Asin(Mathf.Clamp(forward.normalized.y, -1f, 1f)) * Mathf.Rad2Deg;
+            float needed = -Mathf.Atan2(Mathf.Max(here.y, 0f), course.magnitude) * Mathf.Rad2Deg + GlideMarginDegrees;
+            if (pitch < needed)
+            {
+                var level = forward;
+                level.y = 0f;
+                var right = Vector3.Cross(Vector3.up, level.normalized);
+                forward = Quaternion.AngleAxis(-Mathf.Min(limit, needed - pitch), right) * forward;
+            }
+            rbu.transform.forward = forward;
         }
 
         static ObjectBase NearestShip(Vector3 from)

@@ -20,8 +20,8 @@ namespace SeapowerSurvivors;
 /// Stock, a jammer's range and arc only reach enemy radars, and only as far as
 /// the horizon, while the roll that spoils a missile happens within 3 nm of
 /// the missile's target. So this makes the same roll itself (ECM.jamWeapon) for
-/// every enemy missile inside the aimed cone, and fills in the list radars
-/// read. It replaces the stock scan, which walks every object on every fixed
+/// every enemy missile inside the aimed cone, whether or not its seeker is on
+/// yet (see <see cref="JamEarly"/>), and fills in the list radars read. It replaces the stock scan, which walks every object on every fixed
 /// update per jammer, with one a second. The stock 3 nm roll still works, aimed or not.
 /// </remarks>
 static class EcmFit
@@ -249,15 +249,34 @@ static class EcmFit
         {
             if (missile._seeker == null || !InCone(missile)) continue;
             bool already = jammer._ecm._jammedWeapons.ContainsKey(missile);
-            if (!jammer._ecm.jamWeapon(missile) || already) continue;
-            // A missile jammed is a missile stopped, and pays as one shot down.
-            if (hardKill) CombatHooks.Destroy(missile);
-            else
-            {
-                run.Intercepts++;
-                run.AddXp(Progression.MissileIntercept);
-            }
+            if (!(jammer._ecm.jamWeapon(missile) || JamEarly(jammer._ecm, missile)) || already || hardKill) continue;
+            // A missile jammed is a missile stopped, and pays as one shot down: once, even if a SAM then gets it on its way into the sea.
+            CombatHooks.PayIntercept(run, missile);
         }
+        // Hard kill takes every missile this jammer has turned away, those jammed before it was unlocked too.
+        if (hardKill)
+            foreach (var jammed in jammer._ecm._jammedWeapons.Keys.Where(w => w != null && w._taskforce == Globals._enemyTaskforce).ToList())
+                CombatHooks.Destroy(jammed);
+    }
+
+    static readonly System.Func<ECM, WeaponBase, bool> RollJam =
+        AccessTools.MethodDelegate<System.Func<ECM, WeaponBase, bool>>(AccessTools.Method(typeof(ECM), "tryToJamAttackingWeapon"));
+
+    /// <summary>
+    /// The roll for a radar-homing missile whose seeker is not on yet. The game
+    /// only rolls against a seeker that is radiating, and most switch on 10 to
+    /// 20 nm from their target, so reach past that did nothing against missiles,
+    /// Extreme range least of all. A jammed missile flies into the sea whatever
+    /// its seeker is doing, so the same roll, made early, stops it the same way.
+    /// Ours covers every band, so there is no frequency to match.
+    /// </summary>
+    static bool JamEarly(ECM ecm, Missile missile)
+    {
+        var seeker = missile._seeker;
+        if (seeker.isActive() || ecm._ignoredWeapons.Contains(missile) || ecm._jammedWeapons.ContainsKey(missile)) return false;
+        bool radar = seeker._guidanceType == AmmunitionParameters.GuidanceType.ActiveRadarHoming ||
+                     seeker._guidanceType == AmmunitionParameters.GuidanceType.SemiActiveRadarHoming && missile._guidingRadarSystem != null;
+        return radar && RollJam(ecm, missile);
     }
 
     /// <summary>Our jammers do the stock scan's work once a second in <see cref="Work"/>.</summary>

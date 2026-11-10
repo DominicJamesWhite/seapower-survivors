@@ -43,6 +43,8 @@ static class Boosts
     // What the unlocks multiply, on top of the ranks.
     const float HypersonicFactor = 2.5f, LongReachFactor = 2.5f;
     const float OverdriveFactor = 2f;
+    /// <summary>Ripple fire: one launcher's rounds a second apart, so two never leave the same rail together.</summary>
+    const int RippleLaunchesPerMinute = 60;
     const float OverchargeReloadFactor = 4f;
     const float LongShotsFactor = 1.5f, HeavyShellsFactor = 2f;
     const float GhostRcsFactor = 0.1f, ArmouredHealthFactor = 4f;
@@ -91,8 +93,8 @@ static class Boosts
     static void Apply(Run run, ObjectBase ship)
     {
         // The Air wing line, on every round an aircraft fires. Under the Argentine
-        // ensign its damage is for bombs and rockets alone, below.
-        float airDamage = ship.IsAirUnit && !Ensigns.Active(Ensigns.IronBombs) ? Upgrades.Total(run, Upgrades.AirWing, Stat.Damage) : 1f;
+        // and Dutch ensigns its damage is for bombs and rockets alone, below.
+        float airDamage = ship.IsAirUnit && !Ensigns.BombsOnly ? Upgrades.Total(run, Upgrades.AirWing, Stat.Damage) : 1f;
         float gunRof = Upgrades.Total(run, Upgrades.Guns, Stat.RateOfFire);
         float gunDamage = Upgrades.Total(run, Upgrades.Guns, Stat.Damage) * (Upgrades.Has(run, Upgrades.HeavyShells) ? HeavyShellsFactor : 1f);
         float gunRange = Upgrades.Total(run, Upgrades.Guns, Stat.Range) * (Upgrades.Has(run, Upgrades.LongShots) ? LongShotsFactor : 1f) * Ensigns.GunReach;
@@ -107,7 +109,7 @@ static class Boosts
             BurstGap(gun) = Base(gun, "burstGap", BurstGap(gun)) / gunRof;
             // The ready rack's refill from the magazine, for guns that have one.
             gun._vwp._magazineReloadTime = Base(gun, "reload", gun._vwp._magazineReloadTime) * gunReload / gunRof;
-            foreach (var ap in MagazineAmmo(gun))
+            foreach (var ap in GunAmmo(gun))
             {
                 ap._warheadPower = (Base(ap, "power", ap._warheadPower) + shellPower) * gunDamage;
                 // Faster shells and Long shots. The fitted gravity sets how
@@ -124,7 +126,9 @@ static class Boosts
         }
 
         float samReload = Upgrades.Total(run, Upgrades.Sams, Stat.Reload);
-        float samKill = Upgrades.Total(run, Upgrades.Sams, Stat.KillChance);
+        // The Air wing line's damage ranks add hit chance to an aircraft's air-to-air missiles too.
+        float samKill = Upgrades.Total(run, Upgrades.Sams, Stat.KillChance) +
+                        (ship.IsAirUnit ? Upgrades.Total(run, Upgrades.AirWing, Stat.KillChance) : 0f);
         int samChannels = (int)Upgrades.Total(run, Upgrades.Sams, Stat.Channels);
         bool seaSkimmers = Upgrades.Has(run, Upgrades.SeaSkimmerKillers);
         float samSpeed = Upgrades.Has(run, Upgrades.Hypersonic) ? HypersonicFactor : 1f;
@@ -152,9 +156,10 @@ static class Boosts
             ap._maxLaunchRangeInMiles = Base(ap, "rangeMiles", ap._maxLaunchRangeInMiles) * samRange;
             ap._launchRangesInUnity.y = Base(ap, "rangeUnity", ap._launchRangesInUnity.y) * samRange;
             ap._maxFlightTime = Base(ap, "flightTime", ap._maxFlightTime) * samRange;
+            KeepReach(ap, ship.IsAirUnit);
         }
 
-        // Air wing: bombs and rockets. Its scatter ranks are the Argentine ensign's path alone.
+        // Air wing: bombs and rockets. Its scatter ranks are the bombs path's alone.
         float strikeDamage = Upgrades.Total(run, Upgrades.AirWing, Stat.Damage);
         float bombScatter = (Ensigns.Active(Ensigns.IronBombs) ? Ensigns.IronBombScatter : 1f) * Upgrades.Total(run, Upgrades.AirWing, Stat.Accuracy);
         foreach (var ap in PylonAmmo(ship).Where(StrikeStore))
@@ -171,7 +176,6 @@ static class Boosts
         bool smartSeekers = Upgrades.Has(run, Upgrades.SmartSeekers);
         bool waveTop = Upgrades.Has(run, Upgrades.WaveTop);
         bool armoured = Upgrades.Has(run, Upgrades.Armoured);
-        float asmRcs = Upgrades.Has(run, Upgrades.Ghost) ? GhostRcsFactor : 1f;
         foreach (var ap in AntiShipLaunchers(ship).SelectMany(LauncherAmmo).Concat(PylonAmmo(ship)).Where(AntiShipMissile).Distinct())
         {
             ApplyMissileSpeed(ap, asmSpeed, ship.IsAirUnit);
@@ -184,7 +188,7 @@ static class Boosts
             ap._launchRangesInUnity.x = Base(ap, "minRangeUnity", ap._launchRangesInUnity.x) / asmRange;
             // Faster and farther both need longer to get there.
             ap._maxFlightTime = Base(ap, "flightTime", ap._maxFlightTime) * asmRange;
-            ap._maxRCS = Base(ap, "rcs", ap._maxRCS) * asmRcs;
+            KeepReach(ap, ship.IsAirUnit);
             // Past 1 the SAM's chance only goes negative, and the game's floor catches it.
             ap._samDefenceBonus = Mathf.Min(1f, Base(ap, "samDefence", ap._samDefenceBonus) + asmEvasion);
 
@@ -321,7 +325,11 @@ static class Boosts
             }
             // The Dutch ensign is for ships' CIWS: an aircraft's cannon takes only the Guns line.
             ApplyCiwsReach(ciws, ship.IsAirUnit ? cannonRange : Ensigns.CiwsReach);
-            if (!ship.IsAirUnit) continue;
+            if (!ship.IsAirUnit)
+            {
+                ApplyCiwsStores(ciws);
+                continue;
+            }
             ciws._vwp._magazineReloadTime = Base(ciws, "reload", ciws._vwp._magazineReloadTime) * gunReload;
             foreach (var ap in CiwsAmmo(ciws))
                 ap._warheadPower = (Base(ap, "power", ap._warheadPower) + shellPower) * gunDamage * airDamage;
@@ -349,14 +357,18 @@ static class Boosts
         Globals._playerMissilesSpoofedLimit = Upgrades.Has(run, Upgrades.Countermeasures, Stat.DecoyRule) ? int.MaxValue : StockSpoofLimit;
 
         // Ripple fire: no random wait before engaging, no pause before launch,
-        // and no gap between launches from a shared magazine.
+        // a second at most between one launcher's rounds (stock, 3 to 15 s), and
+        // no gap between launches from a shared magazine or between torpedoes.
         bool ripple = Upgrades.Has(run, Upgrades.RippleFire);
         foreach (var launcher in ship._obp._launcherWeapons)
         {
             launcher._vwp._maxReactiontime = ripple ? 0f : Base(launcher._vwp, "reaction", launcher._vwp._maxReactiontime);
             launcher._vwp._preLaunchDelay = ripple ? 0f : Base(launcher._vwp, "preLaunch", launcher._vwp._preLaunchDelay);
             if (ripple) launcher._engageDelay = 0f;
+            int rate = (int)Base(launcher._vwp, "launchRate", launcher._vwp._fireRatePerMinute);
+            launcher._vwp._fireRatePerMinute = ripple ? Mathf.Max(rate, RippleLaunchesPerMinute) : rate;
         }
+        ship._torpedoLaunchDelay = ripple ? 0f : Base(ship, "torpedoDelay", ship._torpedoLaunchDelay);
         var shared = ship._sharedLaunchIntervals;
         if (shared != null)
             foreach (var key in shared.Keys.ToList())
@@ -407,6 +419,24 @@ static class Boosts
     }
 
     /// <summary>
+    /// The Dutch ensign's ready rounds and reload: a mount that fires at everything
+    /// in reach would otherwise be dry in under a minute. Mounts already loaded are
+    /// refilled the moment the count goes up, as a mount only tops up on a rearm.
+    /// </summary>
+    static void ApplyCiwsStores(WeaponSystemCIWS ciws)
+    {
+        var parameters = ciws._vwp;
+        int factor = Ensigns.CiwsStores;
+        int rounds = (int)Base(parameters, "rounds", parameters._internalAmmoCount) * factor;
+        int maxRounds = (int)Base(parameters, "maxRounds", parameters._maxAmmoCount) * factor;
+        parameters._magazineReloadTime = Base(parameters, "reload", parameters._magazineReloadTime) / factor;
+        if (rounds == parameters._internalAmmoCount && maxRounds == parameters._maxAmmoCount) return;
+        parameters._internalAmmoCount = rounds;
+        parameters._maxAmmoCount = maxRounds;
+        if (ciws._ammoForEngage != null) ciws.RefillAmmo();
+    }
+
+    /// <summary>
     /// The Swedish ensign: the torpedo is steered down a wire at its full speed.
     /// The ship gets enough wires that one is always free, and a wire no longer
     /// breaks at the ship's own speed.
@@ -424,25 +454,30 @@ static class Boosts
     /// The Estonian ensign on every aircraft of the fleet, and the Argentine on
     /// strike aircraft: a smaller signature, and for the Argentine a steadier
     /// bomb run, on a moving ship as much as a still one. The Air wing line's
-    /// airframe ranks, which only that ensign's path has, on the same aircraft.
+    /// airframe ranks, which only the bombs path has (the Argentine and Dutch
+    /// ensigns'), on every aircraft: fighters have nothing else on that path.
     /// </summary>
     static void ApplyAirWing(Run run, Aircraft aircraft)
     {
-        bool strike = Ensigns.Active(Ensigns.IronBombs) &&
+        bool argentine = Ensigns.Active(Ensigns.IronBombs);
+        bool strike = Ensigns.BombsOnly &&
                       (run.AirWing.TryGetValue(aircraft, out var roles) ? (roles & Role.AirStrike) != 0 : PylonAmmo(aircraft).Any(StrikeStore));
         var data = aircraft._sensorData;
         if (data != null)
         {
             float rcs = (Ensigns.Active(Ensigns.StealthAir) ? StealthRcsFactor : 1f) *
-                        (strike ? Ensigns.StrikeRcsFactor * Upgrades.Total(run, Upgrades.AirWing, Stat.Rcs) : 1f);
+                        (strike && argentine ? Ensigns.StrikeRcsFactor : 1f) * Upgrades.Total(run, Upgrades.AirWing, Stat.Rcs);
             data._maxRCS = Base(data, "maxRcs", data._maxRCS) * rcs;
             data._minRCS = Base(data, "minRcs", data._minRCS) * rcs;
         }
         var ap = aircraft.Ap;
-        float aim = strike ? Ensigns.IronBombScatter * Upgrades.Total(run, Upgrades.AirWing, Stat.Accuracy) : 1f;
+        float aim = strike ? (argentine ? Ensigns.IronBombScatter : 1f) * Upgrades.Total(run, Upgrades.AirWing, Stat.Accuracy) : 1f;
         ap._bombingAccuracy = Base(ap, "bombingAccuracy", ap._bombingAccuracy) * aim;
         ap._bombingMovingTargetPenalty = Base(ap, "bombingMoving", ap._bombingMovingTargetPenalty) * aim;
-        ApplyAirframe(ap, strike ? Upgrades.Total(run, Upgrades.AirWing, Stat.Speed) : 1f, strike ? Upgrades.Total(run, Upgrades.AirWing, Stat.Turn) : 1f);
+        bool dash = Refits.Dashes(aircraft) && Refits.DashTaken(run);
+        ApplyAirframe(aircraft,
+            Upgrades.Total(run, Upgrades.AirWing, Stat.Speed) * (dash ? Refits.DashSpeed : 1f),
+            Upgrades.Total(run, Upgrades.AirWing, Stat.Turn) * (dash ? Refits.DashTurn : 1f));
     }
 
     /// <summary>
@@ -451,12 +486,17 @@ static class Boosts
     /// drag once, from thrust over speed squared, so thrust goes up by the
     /// speed twice: top speed then rises as much, whether drag was worked out
     /// before this or is worked out after, as it is when a deck aircraft takes off.
+    /// An aircraft already holding an ordered speed holds the faster one at once.
     /// </summary>
-    static void ApplyAirframe(AircraftParameters ap, float speed, float turn)
+    static void ApplyAirframe(Aircraft aircraft, float speed, float turn)
     {
+        var ap = aircraft.Ap;
         float machLimit = Base(ap, "machLimit", ap._machLimit) * speed;
         if (!Mathf.Approximately(ap._machLimit, machLimit))
         {
+            // The speed it was last ordered to hold is a number of its own, so that goes up with the rest.
+            if (aircraft.SpeedCommand.Value is ConstantMach ordered && ap._machLimit > 0f)
+                ordered.SetSpeedInMach(ordered.SpeedInMach * machLimit / ap._machLimit);
             ap._machLimit = machLimit;
             ap._maxSpeedSeaLevel = Base(ap, "seaLevelSpeed", ap._maxSpeedSeaLevel) * speed;
             ap._cruiseMach = Base(ap, "cruiseMach", ap._cruiseMach) * speed;
@@ -527,6 +567,7 @@ static class Boosts
         }
         ap._maxLaunchRangeInMiles = Base(ap, "rangeMiles", ap._maxLaunchRangeInMiles) * range;
         ap._launchRangesInUnity.y = Base(ap, "rangeUnity", ap._launchRangesInUnity.y) * range;
+        if (ap._type != Ammunition.Type.ASROC) KeepReach(ap, airLaunched);
     }
 
     /// <summary>
@@ -691,10 +732,6 @@ static class Boosts
     /// <summary>The fuze radius proximity fuzes get when the shell had none: an impact-fuzed 152 mm, say.</summary>
     const float MinFuzeRadiusM = 5f;
     const float AaRangeFraction = 0.6f;
-    /// <summary>The farthest one of our shells is fired at an aircraft or missile.</summary>
-    const float MaxAaShotM = 15000f;
-    /// <summary>WeaponSystemGun.AlignTurret keeps an engaged gun firing out to this many times its AA range.</summary>
-    const float AaFireReach = 1.15f;
 
     /// <summary>
     /// Fuzes and target types on one of our shell clones. The fuze only acts
@@ -713,11 +750,7 @@ static class Boosts
         // loft, which rules out most of the sky. Only three shells in the
         // game have one (US 5"/38 and 40 mm, Soviet 57 mm); AA fire-control
         // tables give the rest one, as the 5"/38 has, at 60% of max range.
-        // Capped either way: shells fly a fixed path, so past this the target
-        // has moved on before they arrive. The game fires out to 1.15× the AA
-        // range once engaged, so the cap is set to stop the last shot at 15 km.
-        float aa = antiAir && aaRange <= 0f ? AaRangeFraction * ap._launchRangesInUnity.y : aaRange;
-        ap._maxAARangeInUnity = aa > 0f ? Mathf.Min(aa, MaxAaShotM * MetresToUnity / AaFireReach) : aa;
+        ap._maxAARangeInUnity = antiAir && aaRange <= 0f ? AaRangeFraction * ap._launchRangesInUnity.y : aaRange;
         if (antiAir)
         {
             // A timed fuze bursts at the predicted range, so range error alone
@@ -806,6 +839,55 @@ static class Boosts
         KeepTurningCircle(ap, speed);
     }
 
+    sealed class ReachFit { public float Range, Speed, Drag; }
+
+    static readonly ConditionalWeakTable<AmmunitionParameters, ReachFit> reachFits = new ConditionalWeakTable<AmmunitionParameters, ReachFit>();
+    /// <summary>The game's own drag fit: the most drag with which a round still flies its listed range.</summary>
+    static readonly System.Reflection.MethodInfo FitDrag = AccessTools.Method(typeof(KinematicsCache), "GetDragFactor");
+    static bool fitDragMissing;
+
+    /// <summary>
+    /// A longer range a kinematic missile can really fly. The game launches one
+    /// from as far as a simulated flight gets, not from its listed range, and
+    /// the flight is thrust against drag: listing a SAM at 2.5 times the range
+    /// did nothing while its drag still stopped it at the old one. So a round
+    /// with a longer range has its drag fitted again, by the game's own fit, to
+    /// the range it now lists, and takes that if it is less than its speed
+    /// already gave it. Called after both speed and range are set.
+    /// </summary>
+    static void KeepReach(AmmunitionParameters ap, bool airLaunched)
+    {
+        if (ap.Kinematics != AmmunitionParameters.KinematicsLevel.Full) return;
+        float speed = SpeedFactor(ap);
+        float drag = Base(ap, "drag", StockDrag(ap, airLaunched)) / speed;
+        float range = ap._launchRangesInUnity.y;
+        if (range > Base(ap, "rangeUnity", range) * 1.001f && !fitDragMissing)
+        {
+            var fit = reachFits.GetOrCreateValue(ap);
+            if (fit.Range != range || fit.Speed != speed)
+            {
+                if (FitDrag == null)
+                {
+                    fitDragMissing = true;
+                    Entry.Log.LogWarning("Missile reach: the game's drag fit was not found; longer missile ranges are listed but not flown");
+                    return;
+                }
+                // A failed fit must not take the rest of the ship's upgrades down with it.
+                try { fit.Drag = (float)FitDrag.Invoke(KinematicsCache.Instance, new object[] { ap, airLaunched }); }
+                catch (Exception e)
+                {
+                    fit.Drag = float.MaxValue;
+                    Entry.Log.LogError($"Missile reach: fitting drag for {ap._ammunitionFileName} failed: {e}");
+                }
+                fit.Range = range;
+                fit.Speed = speed;
+                Entry.Log.LogInfo($"Missile reach: {ap._ammunitionFileName} drag {drag:0.###} -> {Mathf.Min(drag, fit.Drag):0.###} for {ap._maxLaunchRangeInMiles:0.#} nm");
+            }
+            drag = Mathf.Min(drag, fit.Drag);
+        }
+        DragCoefficient(ap) = drag;
+    }
+
     /// <summary>A round's flight values now and as the game gave them, for the missile trace.</summary>
     internal static string MissileStats(AmmunitionParameters ap)
     {
@@ -856,6 +938,39 @@ static class Boosts
         }
 
         static void Postfix(WeaponBase __instance, double __state) => __instance._launchTime = __state;
+    }
+
+    static readonly ConditionalWeakTable<SensorData, SensorData> ghostSignatures = new ConditionalWeakTable<SensorData, SensorData>();
+    static readonly ConditionalWeakTable<SensorData, object> ghostCopies = new ConditionalWeakTable<SensorData, object>();
+    static readonly Func<object, object> CloneSignature =
+        AccessTools.MethodDelegate<Func<object, object>>(AccessTools.Method(typeof(object), "MemberwiseClone"));
+
+    /// <summary>
+    /// Ghost. What a radar reads off a missile is its signature record, one
+    /// object for every round of that type, the enemy's included; the value on
+    /// the round's own parameters only sets how far our fire control can follow
+    /// it. So each of our anti-ship missiles leaves the launcher with a copy of
+    /// the record at a tenth of the size, one copy per type. A missile object
+    /// is reused, and is handed the shared record again each time it is loaded.
+    /// </summary>
+    [HarmonyPatch(typeof(Missile), nameof(Missile.Container_Launch))]
+    static class GhostSignature
+    {
+        static void Postfix(Missile __instance)
+        {
+            var run = Run.Current;
+            var data = __instance._sensorData;
+            if (run == null || data == null || __instance._ap == null || !Upgrades.Has(run, Upgrades.Ghost) ||
+                !AntiShipMissile(__instance._ap) || !run.Fleet.Contains(__instance._launchPlatform) || ghostCopies.TryGetValue(data, out _)) return;
+            __instance._sensorData = ghostSignatures.GetValue(data, stock =>
+            {
+                var ghost = (SensorData)CloneSignature(stock);
+                if (ghost._maxRCS > 0f) ghost._maxRCS *= GhostRcsFactor;
+                if (ghost._minRCS > 0f) ghost._minRCS *= GhostRcsFactor;
+                ghostCopies.Add(ghost, null);
+                return ghost;
+            });
+        }
     }
 
     /// <summary>Only asked for on first touch, while the clone still has the game's own values.</summary>
@@ -912,8 +1027,10 @@ static class Boosts
     /// <summary>
     /// The game fits a CIWS's hit model so that it scores exactly its listed
     /// kill chance, from the damage and rate of fire it has when fitted, which
-    /// would cancel a better cannon out. So an aircraft's guns are fitted on
-    /// their stock numbers and fire with their real ones.
+    /// would cancel a better cannon out: every intercept rank refitted a ship's
+    /// CIWS at its boosted rate of fire and took the rate ranks, and Overdrive,
+    /// back out. So our CIWS and aircraft guns are fitted on their stock numbers
+    /// and fire with their real ones.
     /// </summary>
     [HarmonyPatch(typeof(WeaponSystemCIWS), "EnsureCalibrated")]
     static class CannonsKeepTheirBoost
@@ -923,7 +1040,7 @@ static class Boosts
             __state = null;
             var run = Run.Current;
             var ap = __instance._ammoForEngage?._ap;
-            if (run == null || ap == null || CiwsCalibration(__instance) >= 0f || !__instance._baseObject.IsAirUnit || !run.Fleet.Contains(__instance._baseObject)) return;
+            if (run == null || ap == null || CiwsCalibration(__instance) >= 0f || !run.Fleet.Contains(__instance._baseObject)) return;
             __state = (ap, ap._warheadPower, __instance._fireRatePerMinute);
             ap._warheadPower = Base(ap, "power", ap._warheadPower);
             __instance._fireRatePerMinute = (int)Base(__instance, "rof", __instance._fireRatePerMinute);
@@ -1066,16 +1183,16 @@ static class Boosts
     {
         float Seconds(int ahead) => Base(gun, "reload", gun._vwp._magazineReloadTime) * Upgrades.Total(run, Upgrades.Guns, Stat.Reload, ahead) /
                                     (Upgrades.Total(run, Upgrades.Guns, Stat.RateOfFire, ahead) * Ensigns.GunRate);
-        return new PreviewRow(gun._vwp._systemName, "Reload", $"{F(Seconds(0))} s", $"{F(Seconds(ranks))} s");
+        return new PreviewRow(SystemName(gun), "Reload", $"{F(Seconds(0))} s", $"{F(Seconds(ranks))} s");
     }
 
     /// <summary>A Guns card's rows for aircraft cannon, read from the guns as fitted so the Point defence and Air wing lines are in them.</summary>
     static void PreviewCannons(Run run, Stat stat, int ranks, float now, float next, List<ObjectBase> fleet, List<PreviewRow> rows)
     {
-        float airDamage = Ensigns.Active(Ensigns.IronBombs) ? 1f : Upgrades.Total(run, Upgrades.AirWing, Stat.Damage);
+        float airDamage = Ensigns.BombsOnly ? 1f : Upgrades.Total(run, Upgrades.AirWing, Stat.Damage);
         foreach (var cannon in fleet.SelectMany(AircraftCannons))
         {
-            string name = cannon._vwp._systemName;
+            string name = SystemName(cannon);
             var ap = CiwsAmmo(cannon).FirstOrDefault();
             switch (stat)
             {
@@ -1103,8 +1220,8 @@ static class Boosts
         if (line == Upgrades.Guns)
             foreach (var gun in fleet.SelectMany(Guns))
             {
-                string name = gun._vwp._systemName;
-                var ap = MagazineAmmo(gun).FirstOrDefault();
+                string name = SystemName(gun);
+                var ap = GunAmmo(gun).FirstOrDefault();
                 switch (stat)
                 {
                     case Stat.Damage when ap != null:
@@ -1154,13 +1271,14 @@ static class Boosts
                         foreach (var launcher in SamLaunchers(ship))
                         {
                             float reload = Base(launcher, "reload", launcher._vwp._magazineReloadTime);
-                            if (reload > 0f) rows.Add(new PreviewRow(launcher._vwp._systemName, "Reload", $"{F(reload * now)} s", $"{F(reload * next)} s"));
+                            if (reload > 0f) rows.Add(new PreviewRow(SystemName(launcher), "Reload", $"{F(reload * now)} s", $"{F(reload * next)} s"));
                         }
                         break;
                     case Stat.KillChance:
                         foreach (var ap in SamLaunchers(ship).SelectMany(LauncherAmmo).Concat(PylonAmmo(ship)).Where(AirToAir))
                         {
-                            float pk = Base(ap, "kill", ap._killProbability);
+                            float pk = Base(ap, "kill", ap._killProbability) +
+                                       (ship.IsAirUnit ? Upgrades.Total(run, Upgrades.AirWing, Stat.KillChance) : 0f);
                             rows.Add(new PreviewRow(AmmoName(ap), "Hit chance", Percent(pk + now), Percent(pk + next)));
                         }
                         break;
@@ -1168,7 +1286,7 @@ static class Boosts
                         foreach (var director in SamDirectors(ship))
                         {
                             int targets = (int)Base(director, "targets", director._targetChannels);
-                            rows.Add(new PreviewRow(director._systemName, "Targets at once", (targets + (int)now).ToString(), (targets + (int)next).ToString()));
+                            rows.Add(new PreviewRow(SystemName(director), "Targets at once", (targets + (int)now).ToString(), (targets + (int)next).ToString()));
                         }
                         break;
                 }
@@ -1245,7 +1363,7 @@ static class Boosts
         else if (line == Upgrades.Mortars)
             foreach (var launcher in fleet.SelectMany(MortarLaunchers))
             {
-                string name = launcher._vwp._systemName;
+                string name = SystemName(launcher);
                 var ap = LauncherAmmo(launcher).FirstOrDefault(Mortar);
                 if (ap == null) continue;
                 switch (stat)
@@ -1272,7 +1390,7 @@ static class Boosts
         else if (line == Upgrades.PointDefence)
             foreach (var ciws in fleet.SelectMany(s => s._obp._ciwsWeapons))
             {
-                string name = ciws._vwp._systemName;
+                string name = SystemName(ciws);
                 if (stat == Stat.Intercept)
                 {
                     float intercept = Base(ciws, "intercept", ciws._missileInterceptChance);
@@ -1287,7 +1405,7 @@ static class Boosts
         else if (line == Upgrades.Countermeasures)
             foreach (var chaff in fleet.SelectMany(s => s._obp._chaffWeapons))
             {
-                string name = chaff._vwp._systemName;
+                string name = SystemName(chaff);
                 switch (stat)
                 {
                     case Stat.Spoof:
@@ -1310,13 +1428,18 @@ static class Boosts
             switch (stat)
             {
                 case Stat.Damage:
-                    bool bombsOnly = Ensigns.Active(Ensigns.IronBombs);
+                    bool bombsOnly = Ensigns.BombsOnly;
                     // As fitted, so a Harpoon's row has the Anti-ship line's damage in it too.
                     foreach (var ap in fleet.SelectMany(PylonAmmo).Where(a => a._warheadPower > 0f && (bombsOnly ? StrikeStore(a) : a._subType != Ammunition.Type.Fueltank)))
                         rows.Add(new PreviewRow(AmmoName(ap), "Damage", F(ap._warheadPower), F(ap._warheadPower * next / now)));
                     if (!bombsOnly)
                         foreach (var ap in fleet.SelectMany(AircraftCannons).SelectMany(CiwsAmmo).Where(a => a._warheadPower > 0f))
                             rows.Add(new PreviewRow(AmmoName(ap), "Damage", F(ap._warheadPower), F(ap._warheadPower * next / now)));
+                    break;
+                case Stat.KillChance:
+                    // As fitted, so the SAM line's hit chance is in the row too.
+                    foreach (var ap in fleet.Where(s => s.IsAirUnit).SelectMany(PylonAmmo).Where(AirToAir))
+                        rows.Add(new PreviewRow(AmmoName(ap), "Hit chance", Percent(ap._killProbability), Percent(ap._killProbability + next - now)));
                     break;
                 case Stat.Resupply:
                     rows.Add(new PreviewRow("Flights", "Pylons rearm", "At level-ups", $"Every {F(Escorts.ResupplySeconds / 60f)} min too"));
@@ -1328,7 +1451,17 @@ static class Boosts
                         var to = Refits.Next(aircraft, standard);
                         if (to != null) rows.Add(new PreviewRow("Flights", "Refit", Refits.Current(aircraft).Name, to.Name));
                     }
-                    if (rows.Count == before) rows.Add(PreviewRow.Note("No strike flight to refit yet: those that join later are refitted as they arrive"));
+                    int backfires = Refits.Unreinforced(run, ranks).Count;
+                    if (backfires > 0)
+                        rows.Add(PreviewRow.Note($"Joining at stand-off range, one for each strike aircraft: {backfires} × {Refits.Reinforcement.Name}"));
+                    if (rows.Count == before) rows.Add(PreviewRow.Note("No flight to refit yet: those that join later are refitted as they arrive"));
+                    if (Refits.DashTaken(run, ranks) && !Refits.DashTaken(run))
+                        foreach (var foxbat in fleet.OfType<Aircraft>().Where(Refits.Dashes))
+                        {
+                            float mach = Base(foxbat.Ap, "machLimit", foxbat.Ap._machLimit), g = Base(foxbat.Ap, "maxG", foxbat.Ap._maxG);
+                            rows.Add(new PreviewRow("MiG-25PD", "Top speed", $"Mach {F(mach)}", $"Mach {F(mach * Refits.DashSpeed)}"));
+                            rows.Add(new PreviewRow("MiG-25PD", "Turn limit", $"{F(g)} g", $"{F(g * Refits.DashTurn)} g"));
+                        }
                     break;
                 case Stat.Reload:
                     rows.Add(new PreviewRow("Flights", "Air resupply every", $"{F(Escorts.ResupplySeconds * now / 60f)} min", $"{F(Escorts.ResupplySeconds * next / 60f)} min"));
@@ -1341,7 +1474,17 @@ static class Boosts
 
     static string F(float value) => value.ToString(value < 10f ? "0.##" : "0.#", System.Globalization.CultureInfo.InvariantCulture);
     static string Percent(float fraction) => $"{fraction * 100f:0}%";
-    static string AmmoName(AmmunitionParameters ap) => string.IsNullOrEmpty(ap._natoDisplayedName) ? ap._ammunitionFileName : ap._natoDisplayedName;
+
+    /// <summary>A system by the name the game's own panels give it. The game has no text for some, which only lose their underscores.</summary>
+    static string SystemName(BaseSystem system) =>
+        (string.IsNullOrEmpty(system.DisplayName.Value) ? system._systemName : system.DisplayName.Value).Replace('_', ' ');
+
+    /// <summary>A round by the name the game's own panels give it, which follows the game's NATO names option.</summary>
+    internal static string AmmoName(AmmunitionParameters ap)
+    {
+        string name = ap._displayedName;
+        return string.IsNullOrEmpty(name) || name == "MISSING TEXT" ? ap._ammunitionFileName.Replace('_', ' ') : name;
+    }
 
     /// <summary>True for one of our shell clones given a longer range by Long shots, or a faster shell by rate of fire.</summary>
     internal static bool IsBoostedShell(AmmunitionParameters ap) =>
@@ -1468,6 +1611,10 @@ static class Boosts
             .Concat(launcher._containers.SelectMany(c => c._weapons).Where(w => w != null).Select(w => w._ap))
             .Where(ap => ap != null)
             .Distinct();
+
+    /// <summary>A gun's shells: from its magazine, or held on the mount, as some light guns' are.</summary>
+    static IEnumerable<AmmunitionParameters> GunAmmo(WeaponSystemGun gun) =>
+        MagazineAmmo(gun).Append(gun._ammoForEngage?._ap).Where(ap => ap != null).Distinct();
 
     static IEnumerable<AmmunitionParameters> MagazineAmmo(WeaponSystem gun) =>
         (gun._vwp._associatedMagazine?._ammunitionList ?? Enumerable.Empty<Ammunition>())

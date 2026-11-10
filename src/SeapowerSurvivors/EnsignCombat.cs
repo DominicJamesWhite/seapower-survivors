@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection.Emit;
 using HarmonyLib;
 using SeaPower;
 using UnityEngine;
@@ -214,6 +215,7 @@ static class EnsignCombat
                 // A launcher that also holds ASROC stays in action: NoMissiles keeps its missiles from being fired.
                 foreach (var launcher in ship._obp._launcherWeapons.Where(Boosts.MissilesOnly))
                     launcher.Inoperable.Value = true;
+        if (run.Hoisted.Contains(Ensigns.LongCiws)) ReportMounts(run);
 
         if (run.Hoisted.Contains(Ensigns.TorpedoEcm)) EcmFit.Tick(run);
         if (run.Hoisted.Contains(Ensigns.EmpMortars)) TickDark();
@@ -344,6 +346,76 @@ static class EnsignCombat
         }
     }
 
+    /// <summary>A ship's CIWS under the Dutch ensign; an aircraft's cannon keeps its own reach and rules.</summary>
+    static bool LongReachMount(WeaponSystemCIWS ciws) =>
+        Ensigns.Active(Ensigns.LongCiws) && !ciws._baseObject.IsAirUnit && InFleet(ciws._baseObject);
+
+    /// <summary>
+    /// The game holds a mount's fire at aircraft and missiles until they are close.
+    /// With the range stretched ×10 that leaves it reading "Engaging" and silent
+    /// for as long as the target stays out at range, so it fires once in reach.
+    /// </summary>
+    [HarmonyPatch(typeof(WeaponSystemCIWS), "HoldFireRangeSqUnity")]
+    static class FireOnceInReach
+    {
+        static void Postfix(WeaponSystemCIWS __instance, ref float __result)
+        {
+            if (LongReachMount(__instance)) __result = float.MaxValue;
+        }
+    }
+
+    /// <summary>
+    /// A mount drops everything for a missile coming at its ship within twice its
+    /// range, so at ×10 one distant missile held it for most of its flight. The
+    /// game's "four times the squared range" is scaled back to the stock reach.
+    /// </summary>
+    [HarmonyPatch(typeof(WeaponSystemCIWS), "AquireTarget")]
+    static class OnlyNearMissilesTakePriority
+    {
+        const float StockFactor = 4f;
+
+        static float ThreatFactor(WeaponSystemCIWS ciws) =>
+            LongReachMount(ciws) ? StockFactor / (Ensigns.CiwsReach * Ensigns.CiwsReach) : StockFactor;
+
+        static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        {
+            var rangeField = AccessTools.Field(typeof(WeaponSystemCIWS), "_maxRangeSq");
+            var list = instructions.ToList();
+            for (int i = 1; i < list.Count; i++)
+            {
+                if (!list[i - 1].LoadsField(rangeField) || !list[i].LoadsConstant(StockFactor)) continue;
+                list[i] = new CodeInstruction(OpCodes.Ldarg_0);
+                list.Insert(i + 1, CodeInstruction.Call(typeof(OnlyNearMissilesTakePriority), nameof(ThreatFactor)));
+                return list;
+            }
+            Entry.Log.LogWarning("Dutch ensign: missile priority reach not found in AquireTarget; distant missiles will still hold the CIWS");
+            return list;
+        }
+    }
+
+    const double MountReportSeconds = 30.0;
+    static double nextMountReport;
+
+    /// <summary>What each CIWS is doing, every 30 s of game time, as nothing else in the log says.</summary>
+    static void ReportMounts(Run run)
+    {
+        double now = GameTime.missionElapsedTime;
+        if (now < nextMountReport) return;
+        nextMountReport = now + MountReportSeconds;
+        foreach (var ship in run.Fleet.Where(s => s != null && !s.IsDestroyed && !s.IsAirUnit && s._obp._ciwsWeapons.Count > 0))
+            Entry.Log.LogInfo($"CIWS on {ship.getUIDAndName()}: {string.Join("; ", ship._obp._ciwsWeapons.Select(DescribeMount))}");
+    }
+
+    static string DescribeMount(WeaponSystemCIWS ciws)
+    {
+        string ammo = ciws._ammoForEngage?._ap?._ammunitionFileName;
+        int rounds = ammo == null ? 0 : ciws.getLoadedAmmoCount(ammo);
+        var target = ciws._currentClosestTarget;
+        string aim = target == null ? "no target"
+            : $"{target.getUIDAndName()} at {Vector3.Distance(target.transform.position, ciws._mountObject.transform.position) / UnityPerNm:0.0} nm";
+        return $"{ciws._vwp._systemName} {(ciws._isFiring ? "firing" : "not firing")}, {aim}, {rounds} rounds, status {ciws.GetStatus()}";
+    }
+
     // The Dutch ensign's guns: fleet guns only, where the Accuracy line works per crew and so also reaches anything else it steers.
 
     /// <summary>The surface-fire error reads its crew's multiplier; for a fleet gun that is lent a lower one for the call.</summary>
@@ -390,6 +462,7 @@ static class EnsignCombat
     {
         ignored = null;
         nextCloseCall = 0.0;
+        nextMountReport = 0.0;
         darkened.Clear();
         pulsedRadars.Clear();
         EcmFit.Reset();

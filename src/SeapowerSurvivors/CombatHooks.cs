@@ -25,6 +25,17 @@ static class CombatHooks
     /// </summary>
     static readonly HashSet<int> struckMissiles = new HashSet<int>();
 
+    /// <summary>Enemy missiles already paid for while still flying: one a jammer has sent into the sea. Nothing pays for them twice.</summary>
+    static readonly HashSet<int> paidMissiles = new HashSet<int>();
+
+    /// <summary>Pays for a missile stopped without being destroyed, and remembers it until it is gone.</summary>
+    internal static void PayIntercept(Run run, WeaponBase missile)
+    {
+        if (!paidMissiles.Add(missile.UniqueID)) return;
+        run.Intercepts++;
+        run.AddXp(Progression.MissileIntercept);
+    }
+
     static bool IsEnemyWeapon(object o) => o is WeaponBase w && w._taskforce == Globals._enemyTaskforce;
 
     static bool IsOurs(ObjectBase o) => o != null && o._taskforce == Globals._playerTaskforce;
@@ -148,7 +159,8 @@ static class CombatHooks
     {
         static void Prefix(WeaponBase __instance)
         {
-            if (!struckMissiles.Remove(__instance.UniqueID)) return;
+            bool paid = paidMissiles.Remove(__instance.UniqueID);
+            if (!struckMissiles.Remove(__instance.UniqueID) || paid) return;
             var run = Run.Current;
             if (run == null) return;
             run.Intercepts++;
@@ -159,6 +171,7 @@ static class CombatHooks
     internal static void Reset()
     {
         struckMissiles.Clear();
+        paidMissiles.Clear();
         launchesSeen.Clear();
     }
 
@@ -180,7 +193,7 @@ static class CombatHooks
     /// </summary>
     static System.Collections.Generic.IEnumerable<Missile> AntiShipInFlight() =>
         Singleton<ObjectsManager>.Instance._listOfAllObjects.OfType<Missile>()
-            .Where(m => !m.IsDestroyed && m._taskforce == Globals._enemyTaskforce && (Boosts.AntiShipMissile(m._ap) || SamAtShip(m)));
+            .Where(m => !m.IsDestroyed && m._taskforce == Globals._enemyTaskforce && !Abilities.Turned(m) && (Boosts.AntiShipMissile(m._ap) || SamAtShip(m)));
 
     static bool SamAtShip(Missile missile)
     {

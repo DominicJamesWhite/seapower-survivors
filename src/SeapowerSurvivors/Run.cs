@@ -64,6 +64,8 @@ sealed class Run
     internal int HitsToIgnore;
     /// <summary>The Greek ensign's one escort has been taken.</summary>
     internal bool EscortChosen;
+    /// <summary>The strike aircraft the Air wing line's last refit has already brought a Backfire for.</summary>
+    internal readonly HashSet<ObjectBase> Reinforced = new HashSet<ObjectBase>();
 
     /// <summary>Ranks taken on each upgrade, in the order the upgrades were first taken.</summary>
     readonly Dictionary<Upgrade, int> ranks = new Dictionary<Upgrade, int>();

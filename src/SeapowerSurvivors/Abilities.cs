@@ -85,17 +85,64 @@ static class Abilities
         if (prey != null)
         {
             turncoats[missile] = prey;
-            TestPanel.Report($"{missile._ap._natoDisplayedName} turned on {prey.Name.Value}");
+            // It has spent its fuel getting here; the trip back starts from a full tank.
+            missile._traveledDistance = 0f;
+            float nm = Vector3.Distance(prey.transform.position, missile.transform.position) / UnityPerNm;
+            TestPanel.Report($"{Boosts.AmmoName(missile._ap)} turned on {prey.Name.Value}, {nm:0.0} nm away");
         }
         else if (Upgrades.Has(run, Upgrades.BurnOut) || Upgrades.Has(run, Upgrades.Turncoat))
             burning[missile] = GameTime.missionElapsedTime + BurnOutDelay;
     }
 
-    static ObjectBase NearestEnemyShip(WeaponBase missile) =>
-        Singleton<ObjectsManager>.Instance._listOfAllObjects
-            .Where(o => o is Vessel && Enemy(o) && !o.IsDestroyed)
-            .OrderBy(o => (o.transform.position - missile.transform.position).sqrMagnitude)
-            .FirstOrDefault();
+    const float UnityPerNm = 27.559496f;
+
+    /// <summary>True for an enemy missile now hunting its own side: no longer a threat to the fleet.</summary>
+    internal static bool Turned(WeaponBase missile) => turncoats.ContainsKey(missile);
+
+    /// <summary>
+    /// A ship the missile's own radar would take: the game's seekers pass over
+    /// life rafts and mines (ActiveRadarSeeker.createListOfPotentialContacts),
+    /// and a raft is a Vessel, so an airman's raft was often the nearest "ship".
+    /// </summary>
+    static bool Huntable(ObjectBase o) =>
+        o is Vessel && Enemy(o) && !o.IsDestroyed && o._obp != null &&
+        !o._obp._unitRoles.Contains(ObjectBaseParameters.UnitRoles.Deco) &&
+        !o._obp._unitRoles.Contains(ObjectBaseParameters.UnitRoles.SeaMine);
+
+    /// <summary>The nearest enemy ship the missile can reach on a full tank; null if there is none.</summary>
+    static ObjectBase NearestEnemyShip(WeaponBase missile)
+    {
+        // A missile flown without kinematics is destroyed at its launch range; the others coast, so are not held to it.
+        float reach = missile._ap.Kinematics == AmmunitionParameters.KinematicsLevel.None ? missile._ap._launchRangesInUnity.y : float.MaxValue;
+        ObjectBase nearest = null;
+        float best = reach * reach;
+        foreach (var o in Singleton<ObjectsManager>.Instance._listOfAllObjects)
+        {
+            if (!Huntable(o)) continue;
+            float d = (o.transform.position - missile.transform.position).sqrMagnitude;
+            if (d < best) { best = d; nearest = o; }
+        }
+        return nearest;
+    }
+
+    /// <summary>
+    /// The ship a turned missile hunts now, or null for any other missile. If
+    /// its ship has gone it takes the next nearest, and burns out with none left.
+    /// </summary>
+    static ObjectBase Prey(WeaponBase missile)
+    {
+        if (turncoats.Count == 0 || !turncoats.TryGetValue(missile, out var prey)) return null;
+        if (prey != null && !prey.IsDestroyed) return prey;
+        prey = NearestEnemyShip(missile);
+        if (prey == null)
+        {
+            turncoats.Remove(missile);
+            CombatHooks.Destroy(missile);
+            return null;
+        }
+        turncoats[missile] = prey;
+        return prey;
+    }
 
     [HarmonyPatch(typeof(SeekerBase), nameof(SeekerBase.CheckCountermeasureLock), typeof(ObjectBase))]
     static class ChaffTest
@@ -136,15 +183,14 @@ static class Abilities
                 return;
             }
 
-            if (turncoats.TryGetValue(missile, out var prey))
+            bool turned = turncoats.ContainsKey(missile);
+            var prey = Prey(missile);
+            if (turned && prey == null) return;
+            if (prey != null)
             {
-                if (prey == null || prey.IsDestroyed)
-                {
-                    turncoats.Remove(missile);
-                    return;
-                }
-                // Steer for the prey until the seeker finds it; our own ships
-                // and chaff are taken out of what it can see.
+                // Point the seeker at the prey until it finds it; TurncoatSight
+                // takes our own ships and chaff out of what it can see, and
+                // TurncoatCourse flies the missile there.
                 __instance._lockedOnCountermeasure = null;
                 __instance._spoofEndTime = -1.0;
                 __instance._firstLockedOnTarget = null;
@@ -173,8 +219,33 @@ static class Abilities
     {
         static void Postfix(ActiveRadarSeeker __instance)
         {
-            if (turncoats.ContainsKey(SeekerAmmo(__instance)))
-                __instance._potentialContacts.RemoveAll(o => o != null && o._taskforce == Globals._playerTaskforce);
+            // Only the enemy: neutral pickups are as safe from it as our own ships.
+            if (turncoats.Count > 0 && turncoats.ContainsKey(SeekerAmmo(__instance)))
+                __instance._potentialContacts.RemoveAll(o => o == null || o._taskforce != Globals._enemyTaskforce);
+        }
+    }
+
+    /// <summary>
+    /// Flies a turned missile at its prey. The game steers for the target
+    /// position it works out here each tick (Missile.CalculateInterceptAimPoint
+    /// then writes the aim point from it), and with nothing on the seeker that
+    /// is the old aim point by our fleet. Its terminal phase also counts a
+    /// target more than 90° off the nose as lost and destroys the missile a few
+    /// seconds later, which is every turned missile until it has come about.
+    /// </summary>
+    [HarmonyPatch(typeof(Missile), nameof(Missile.CalcEstimatedTargetPosition))]
+    static class TurncoatCourse
+    {
+        static void Postfix(Missile __instance)
+        {
+            var prey = Prey(__instance);
+            if (prey == null) return;
+            __instance._targetLost = false;
+            // Once the seeker holds a ship, the game's own homing takes over.
+            if (__instance.CurrentStrongestTargetEcho?._objectBase != null) return;
+            __instance._currentKnownTargetPosition = prey._geoPosition.ToUnity();
+            __instance._lastKnownTargetVelocity = prey.UnityVelocityVector;
+            __instance.InitialTargetGeoPosition = prey._geoPosition;
         }
     }
 
@@ -376,7 +447,14 @@ static class Abilities
             gun._vwp._associatedSensors.Any(s => s is SensorSystemRadar && !s.Inoperable.Value && s.IsOn.Value && s.IsAimedAtTarget(target));
     }
 
-    /// <summary>Overcharge: a second cloud straight after the first, from the next loaded round.</summary>
+    static readonly AccessTools.FieldRef<WeaponSystemChaff, ChaffAttacher> ChaffClouds = AccessTools.FieldRefAccess<WeaponSystemChaff, ChaffAttacher>("_chaff");
+
+    /// <summary>
+    /// Overcharge: a second cloud straight after the first, from the next loaded
+    /// round. When the first was the launcher's last loaded round there is none,
+    /// and the game has already started the reload or marked the launcher empty,
+    /// so the second cloud is thrown without a round: every launch fires two.
+    /// </summary>
     [HarmonyPatch(typeof(WeaponSystemChaff), nameof(WeaponSystemChaff.launchChaff))]
     static class DoubleCloud
     {
@@ -389,6 +467,14 @@ static class Abilities
             var run = Run.Current;
             if (launching || __state || !ChaffReloadInProgress(__instance) || run == null ||
                 __instance._baseObject?._taskforce != Globals._playerTaskforce || !Upgrades.Has(run, Upgrades.Overcharge)) return;
+            if (__instance._isReloading || __instance._isEmpty)
+            {
+                var clouds = ChaffClouds(__instance);
+                if (clouds == null) return;
+                clouds.AddChaffAmmo(1);
+                clouds.launchChaffCloud();
+                return;
+            }
             launching = true;
             try
             {
