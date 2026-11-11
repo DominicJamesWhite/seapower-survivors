@@ -431,7 +431,8 @@ static class Abilities
         {
             var target = __instance._targetObject;
             if (target == null || target.IsDestroyed || !InFleet(__instance._launchPlatform) || !Unlocked(Upgrades.SmartShells)) return;
-            float remaining = (float)(__instance._toTargetTime - (GameTime.missionElapsedTime - ShellFireTime(__instance)));
+            // A shell's times are on its own clock (the simulation's, since 0.9.0), not the mission's.
+            float remaining = (float)(__instance._toTargetTime - (Projectile.FlightClock - ShellFireTime(__instance)));
             if (remaining <= 0f || remaining > SmartShellSeconds || !BeamOn(__instance._ws, target)) return;
 
             Vector3 aim = __instance._projectileAimGeoPosition.ToUnity();
@@ -439,7 +440,7 @@ static class Abilities
             // Against a ship, keep the height the shell was aimed at.
             if (!target.IsAirUnit) desired.y = aim.y;
             aim = Vector3.MoveTowards(aim, desired, SmartShellSteerMs * MetresToUnity * GameTime.fixedDeltaTime);
-            __instance._projectileAimGeoPosition.FromUnity(aim);
+            __instance._projectileAimGeoPosition = new GeoPosition(aim);
         }
 
         static bool BeamOn(WeaponSystem gun, ObjectBase target) =>

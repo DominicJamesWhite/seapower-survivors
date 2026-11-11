@@ -70,7 +70,7 @@ static class EnsignCombat
     {
         float range = ap._maxLaunchRangeInMiles;
         if (range <= 0f) return 1f;
-        return Mathf.Lerp(PointBlankDamage, 1f, (float)gun._geoPosition.getDistanceInMiles(target._geoPosition) / range);
+        return Mathf.Lerp(PointBlankDamage, 1f, Spawner.Nm(gun._geoPosition, target._geoPosition) / range);
     }
 
     static bool SpendsCharge(AmmunitionParameters ap) =>
@@ -153,7 +153,7 @@ static class EnsignCombat
         float reach = Ensigns.EmpNm(rank);
         foreach (var ship in Singleton<ObjectsManager>.Instance._listOfAllVesselObjects)
         {
-            if (!EnemyShip(ship) || (float)ship._geoPosition.getDistanceInMiles(at) > reach) continue;
+            if (!EnemyShip(ship) || Spawner.Nm(ship._geoPosition, at) > reach) continue;
             if (!darkened.ContainsKey(ship)) TestPanel.Report($"EMP: {ship.Name.Value} goes dark");
             darkened[ship] = until;
             SetDark(ship, true);
@@ -307,17 +307,21 @@ static class EnsignCombat
     /// what it can use instead. A launcher can be marked out of action, but a
     /// pylon cannot.
     /// </summary>
-    [HarmonyPatch(typeof(AI), nameof(AI.AmmoForTarget))]
+    /// <remarks>
+    /// Since 0.9.0 the AI fills a list it is handed, and the overload that
+    /// returns one only calls this, so this is the one to patch.
+    /// </remarks>
+    [HarmonyPatch(typeof(AI), nameof(AI.AmmoForTarget), typeof(ObjectBase), typeof(List<string>), typeof(bool))]
     static class NoMissiles
     {
         static readonly AccessTools.FieldRef<AI, ObjectBase> AiShip = AccessTools.FieldRefAccess<AI, ObjectBase>("_baseObject");
 
-        static void Postfix(AI __instance, List<string> __result)
+        static void Postfix(AI __instance, List<string> matchingAmmo)
         {
-            if (!Ensigns.Active(Ensigns.LongCiws) || __result == null || __result.Count == 0) return;
+            if (!Ensigns.Active(Ensigns.LongCiws) || matchingAmmo == null || matchingAmmo.Count == 0) return;
             var ship = AiShip(__instance);
             if (!InFleet(ship)) return;
-            __result.RemoveAll(name => ship.getAmmunitionByName(name)?._ap is AmmunitionParameters ap && Ensigns.Withheld(ap));
+            matchingAmmo.RemoveAll(name => ship.getAmmunitionByName(name)?._ap is AmmunitionParameters ap && Ensigns.Withheld(ap));
         }
     }
 
@@ -368,6 +372,12 @@ static class EnsignCombat
     /// A mount drops everything for a missile coming at its ship within twice its
     /// range, so at ×10 one distant missile held it for most of its flight. The
     /// game's "four times the squared range" is scaled back to the stock reach.
+    /// <para>
+    /// Since 0.9.0 the game works that reach out once and also uses it as how far
+    /// out a mount picks an aircraft off the plot, where it used its own range
+    /// before. Scaled back for missiles, it would hold a ×10 mount to aircraft
+    /// inside a fifth of its range, so there the mount's own range is put back.
+    /// </para>
     /// </summary>
     [HarmonyPatch(typeof(WeaponSystemCIWS), "AquireTarget")]
     static class OnlyNearMissilesTakePriority
@@ -377,18 +387,43 @@ static class EnsignCombat
         static float ThreatFactor(WeaponSystemCIWS ciws) =>
             LongReachMount(ciws) ? StockFactor / (Ensigns.CiwsReach * Ensigns.CiwsReach) : StockFactor;
 
+        /// <summary>How far out, squared, a mount takes an aircraft from the plot: the game's answer, or a long-reach mount's whole range.</summary>
+        static readonly AccessTools.FieldRef<WeaponSystemCIWS, float> RangeSquared = AccessTools.FieldRefAccess<WeaponSystemCIWS, float>("_maxRangeSq");
+
+        static float AircraftReach(float stock, WeaponSystemCIWS ciws) =>
+            LongReachMount(ciws) ? Mathf.Max(stock, RangeSquared(ciws)) : stock;
+
+        static bool Jumps(CodeInstruction code) => code.opcode == OpCodes.Br || code.opcode == OpCodes.Br_S;
+
+        static bool ReadsLocal(CodeInstruction code) =>
+            code.opcode == OpCodes.Ldloc || code.opcode == OpCodes.Ldloc_S || code.opcode == OpCodes.Ldloc_0 ||
+            code.opcode == OpCodes.Ldloc_1 || code.opcode == OpCodes.Ldloc_2 || code.opcode == OpCodes.Ldloc_3;
+
         static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
         {
             var rangeField = AccessTools.Field(typeof(WeaponSystemCIWS), "_maxRangeSq");
             var list = instructions.ToList();
+            bool threat = false, aircraft = false;
             for (int i = 1; i < list.Count; i++)
             {
-                if (!list[i - 1].LoadsField(rangeField) || !list[i].LoadsConstant(StockFactor)) continue;
-                list[i] = new CodeInstruction(OpCodes.Ldarg_0);
-                list.Insert(i + 1, CodeInstruction.Call(typeof(OnlyNearMissilesTakePriority), nameof(ThreatFactor)));
-                return list;
+                // _maxRangeSq * 4f
+                if (!threat && list[i - 1].LoadsField(rangeField) && list[i].LoadsConstant(StockFactor))
+                {
+                    list[i] = new CodeInstruction(OpCodes.Ldarg_0);
+                    list.Insert(i + 1, CodeInstruction.Call(typeof(OnlyNearMissilesTakePriority), nameof(ThreatFactor)));
+                    threat = true;
+                }
+                // IsAirUnit ? reach : _maxRangeSq, the reach being the local read straight after the branch past the field
+                else if (!aircraft && i >= 2 && list[i - 2].LoadsField(rangeField) && Jumps(list[i - 1]) && ReadsLocal(list[i]))
+                {
+                    // After the read, which keeps the label the aircraft branch jumps to.
+                    list.Insert(i + 1, new CodeInstruction(OpCodes.Ldarg_0));
+                    list.Insert(i + 2, CodeInstruction.Call(typeof(OnlyNearMissilesTakePriority), nameof(AircraftReach)));
+                    aircraft = true;
+                }
             }
-            Entry.Log.LogWarning("Dutch ensign: missile priority reach not found in AquireTarget; distant missiles will still hold the CIWS");
+            if (!threat) Entry.Log.LogWarning("Dutch ensign: missile priority reach not found in AquireTarget; distant missiles will still hold the CIWS");
+            if (threat && !aircraft) Entry.Log.LogWarning("Dutch ensign: aircraft reach not found in AquireTarget; a long-reach CIWS will only take aircraft close in");
             return list;
         }
     }
@@ -418,26 +453,42 @@ static class EnsignCombat
 
     // The Dutch ensign's guns: fleet guns only, where the Accuracy line works per crew and so also reaches anything else it steers.
 
-    /// <summary>The surface-fire error reads its crew's multiplier; for a fleet gun that is lent a lower one for the call.</summary>
-    [HarmonyPatch(typeof(WeaponSystemGun), "DeviationCheck")]
+    /// <summary>
+    /// The gun's aiming error reads its crew's multiplier; for a fleet gun that is lent a lower one for the call.
+    /// Since 0.9.0 a gun draws its anti-air error once in DeviationCheck and then works the
+    /// aim out again from those draws for each shell, in AaDeviationFromDraws, reading the
+    /// crew afresh: left out, a shell fired after the first of a salvo lost the bonus.
+    /// </summary>
+    [HarmonyPatch]
     static class DutchGunAim
     {
+        /// <summary>Set while a multiplier is lent, so one aim worked out inside another is not lent to twice.</summary>
+        static bool lent;
+
+        static IEnumerable<System.Reflection.MethodBase> TargetMethods() =>
+            new[] { "DeviationCheck", "AaDeviationFromDraws" }
+                .Select(name => (System.Reflection.MethodBase)AccessTools.Method(typeof(WeaponSystemGun), name))
+                .Where(method => method != null);
+
         static void Prefix(WeaponSystemGun __instance, out float? __state)
         {
             __state = null;
             var crew = __instance._baseObject?._crew;
             var run = Run.Current;
-            if (crew == null || run == null || !InFleet(__instance._baseObject)) return;
+            if (lent || crew == null || run == null || !InFleet(__instance._baseObject)) return;
             // The Guns line's own aiming shares this hook: mortars read the crew's multiplier, so it can only be raised while a gun aims.
             float factor = Boosts.GunAimFactor(run) * (Ensigns.Active(Ensigns.LongCiws) ? Ensigns.DutchAimFactor : 1f);
             if (factor == 1f) return;
             __state = crew._fcErrorMultiplier;
             crew._fcErrorMultiplier *= factor;
+            lent = true;
         }
 
         static void Finalizer(WeaponSystemGun __instance, float? __state)
         {
-            if (__state is float was) __instance._baseObject._crew._fcErrorMultiplier = was;
+            if (!(__state is float was)) return;
+            __instance._baseObject._crew._fcErrorMultiplier = was;
+            lent = false;
         }
     }
 

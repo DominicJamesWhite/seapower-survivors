@@ -155,7 +155,7 @@ static class Sea
         if (bestGap >= clearNm) return true;
 
         // Past this, a spot is clear of every ship whichever way it lies.
-        float furthest = Mathf.Max(distanceNm, ships.Max(s => (float)from.getDistanceInMiles(s)) + clearNm + members);
+        float furthest = Mathf.Max(distanceNm, ships.Max(s => Spawner.Nm(from, s)) + clearNm + members);
         if (water) Measure(from, furthest);
 
         float startBearing = bearing, startDistance = distanceNm, bestBearing = bearing, bestDistance = distanceNm;
@@ -192,7 +192,7 @@ static class Sea
         Enumerable.Range(0, Mathf.Max(members, 1)).Min(i => Nearest(ships, Abreast(front, bearing, i)));
 
     static float Nearest(IList<GeoPosition> ships, GeoPosition at) =>
-        ships.Min(s => (float)at.getDistanceInMiles(s));
+        ships.Min(s => Spawner.Nm(at, s));
 
     static List<float> OpenBearings(GeoPosition from, float distanceNm, out float longest, out float longestRun)
     {
@@ -216,7 +216,7 @@ static class Sea
     /// <summary>The clear run on every bearing, kept until the fleet moves or a spawn wants to look further.</summary>
     static void Measure(GeoPosition from, float distanceNm)
     {
-        if (runs != null && distanceNm <= measuredTo && from.getDistanceInMiles(measuredAt) < RemeasureNm) return;
+        if (runs != null && distanceNm <= measuredTo && Spawner.Nm(from, measuredAt) < RemeasureNm) return;
         measuredAt = from;
         measuredTo = Mathf.Max(distanceNm, MeasureNm);
         runs = new float[Mathf.RoundToInt(360f / BearingStepDeg)];

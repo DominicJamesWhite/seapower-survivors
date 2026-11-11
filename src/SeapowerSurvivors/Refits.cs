@@ -132,8 +132,11 @@ static class Refits
     static readonly HashSet<Rung> broken = new HashSet<Rung>();
 
     /// <summary>The air wing standard: the Refit ranks taken, and those in the next <paramref name="ahead"/> ranks too.</summary>
-    internal static int Standard(Run run, int ahead = 0) =>
-        Upgrades.AirWing.Path.Take(run.RankOf(Upgrades.AirWing) + ahead).Count(s => s.Stat == Stat.Refit);
+    internal static int Standard(Run run, int ahead = 0) => Upgrades.RefitsAllowed ? RefitRanks(run, ahead) : 0;
+
+    /// <summary>The Refit ranks taken, whatever the ensigns: a Kiev's deck stores follow them too.</summary>
+    internal static int RefitRanks(Run run, int ahead = 0) =>
+        Upgrades.AirWing.Path.Take(run.RankOf(Upgrades.AirWing) + ahead).Count(s => s.Effects.Any(e => e.Stat == Stat.Refit));
 
     /// <summary>The ladder an aircraft is on and its rung, or null for one with no ladder: AWACS.</summary>
     static (Rung[] ladder, int index) Find(ObjectBase aircraft)
@@ -180,7 +183,7 @@ static class Refits
     }
 
     /// <summary>True while a weapon that needs it for guidance is still flying. Rounds on its pylons do not count.</summary>
-    static bool Busy(ObjectBase aircraft)
+    internal static bool Busy(ObjectBase aircraft)
     {
         var onPylons = new HashSet<WeaponBase>(aircraft._obp._hardpointWeapons.SelectMany(h => h._weapons));
         return Singleton<ObjectsManager>.Instance._listOfAllWeapons.Any(w =>
@@ -203,7 +206,7 @@ static class Refits
             at = Escorts.StandOffPosition(run, slot);
             altitudeFt = Mathf.Max(altitudeFt, Escorts.StandOffAltitudeFt);
         }
-        var fresh = Spawner.Aircraft(rung.Type, "Squadron1", rung.Loadout, at, altitudeFt, old.transform.eulerAngles.y, Globals._playerTaskforce);
+        var fresh = Spawner.Aircraft(rung.Type, "Squadron1", rung.Loadout, at, altitudeFt, Spawner.TrueHeading(old), Globals._playerTaskforce);
         if (fresh == null)
         {
             broken.Add(rung);

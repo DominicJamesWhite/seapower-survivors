@@ -90,7 +90,7 @@ sealed class SetPieces
         float reach = Reach.PlayerReachNm(fleet, first);
         // Placed from the flagship, so it also has to be past the furthest escort, with room for its own line abreast.
         float spread = fleet.Where(s => s != null && !s.IsDestroyed && !s.IsAirUnit)
-            .Max(s => (float)player._geoPosition.getDistanceInMiles(s._geoPosition));
+            .Max(s => Spawner.Nm(player._geoPosition, s._geoPosition));
         float clearOfFleet = spread + Script.MinSpawnNm + (def.Hulls.Length + def.Escorts.Length) / 2f;
         float beyond = Mathf.Max(UnityEngine.Random.Range(def.MinBeyondNm, def.MaxBeyondNm), clearOfFleet - reach);
 
@@ -113,7 +113,7 @@ sealed class SetPieces
         active.Add(piece);
 
         var centre = Centre(piece);
-        TestPanel.Report($"{def.Name} sighted, bearing {player._geoPosition.HeadingToPosition(centre):F0}, {player._geoPosition.getDistanceInMiles(centre):F0} nm" +
+        TestPanel.Report($"{def.Name} sighted, bearing {player._geoPosition.HeadingToPosition(centre):F0}, {Spawner.Nm(player._geoPosition, centre):F0} nm" +
                          (defence < def.MinDefence ? $" (guns only)" : ""));
         Entry.Log.LogInfo($"Set piece {def.Name}: {piece.Hulls.Count} hulls, {piece.Escorts.Count} escorts, " +
                           $"fleet reach {reach:F1} nm, placed {beyond:F1} nm beyond it, {def.Knots:F0} kn, {def.LifeMinutes:F0} game min");
@@ -196,7 +196,7 @@ sealed class SetPieces
                 continue;
             }
 
-            if (Now > piece.Ends || def.Kind == SetPieceKind.Convoy && piece.Hulls.Where(Alive).Any(h => h._geoPosition.getDistanceInMiles(piece.LaneEnds[h]) < ArrivedNm))
+            if (Now > piece.Ends || def.Kind == SetPieceKind.Convoy && piece.Hulls.Where(Alive).Any(h => Spawner.Nm(h._geoPosition, piece.LaneEnds[h]) < ArrivedNm))
             {
                 active.Remove(piece);
                 int sunk = piece.Hulls.Count(h => !Alive(h));
@@ -212,7 +212,7 @@ sealed class SetPieces
                 piece.NextReport = Now + Script.ReportEveryMinutes * 60f;
                 piece.ReportUntil = Now + Script.ReportWindowMinutes * 60f;
                 var centre = Centre(piece);
-                TestPanel.Report($"Contact report: {def.Name}, bearing {player._geoPosition.HeadingToPosition(centre):F0}, {player._geoPosition.getDistanceInMiles(centre):F0} nm");
+                TestPanel.Report($"Contact report: {def.Name}, bearing {player._geoPosition.HeadingToPosition(centre):F0}, {Spawner.Nm(player._geoPosition, centre):F0} nm");
                 reveal = true;
             }
             if (reveal && Now < piece.ReportUntil)

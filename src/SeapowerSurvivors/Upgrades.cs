@@ -65,11 +65,14 @@ sealed class Step
     public readonly Stat Stat;
     /// <summary>The factor or bonus; for a chance, the rate it approaches its cap at.</summary>
     public readonly float Value;
-    public readonly string Text;
+    readonly string text, name;
+    /// <summary>For a rank that reads differently under the ensigns flown: its name and text as they stand.</summary>
+    System.Func<(string name, string text)> reads;
+    public string Text => reads != null ? reads().text : text;
     /// <summary>For a chance, the bonus it approaches and never reaches.</summary>
     public readonly float Cap;
     /// <summary>An ability rank's name: every fifth rank. Null for a stat rank.</summary>
-    public readonly string Name;
+    public string Name => reads != null ? reads().name : name;
     public readonly Unlock Unlock;
     /// <summary>A blended rank's other effects.</summary>
     Step[] also = System.Array.Empty<Step>();
@@ -77,21 +80,25 @@ sealed class Step
     /// <summary>Everything this rank does: itself, and for a blended rank the rest.</summary>
     public IEnumerable<Step> Effects => new[] { this }.Concat(also);
 
-    /// <summary>One rank that raises several stats at once.</summary>
+    /// <summary>One rank that raises several stats at once. An ability rank keeps its name.</summary>
     public static Step Blend(Step first, params Step[] rest) =>
-        new Step(first.Stat, first.Value, first.Text, cap: first.Cap) { also = rest };
+        new Step(first.Stat, first.Value, first.text, first.name, first.Cap, first.Unlock) { also = rest, reads = first.reads };
+
+    /// <summary>The same rank, named and described as <paramref name="reads"/> says at the time.</summary>
+    public Step Reading(System.Func<(string name, string text)> reads) =>
+        new Step(Stat, Value, text, name ?? "", Cap, Unlock) { also = also, reads = reads };
 
     public Step(Stat stat, float value, string text, string name = null, float cap = 0f, Unlock unlock = null)
     {
         Stat = stat;
         Value = value;
-        Text = text;
-        Name = name;
+        this.text = text;
+        this.name = name;
         Cap = cap;
         Unlock = unlock;
     }
 
-    public bool IsAbility => Name != null;
+    public bool IsAbility => name != null;
 
     public static Step Ability(Unlock unlock) => new Step(Stat.Ability, 1f, unlock.Text, unlock.Name, unlock: unlock);
 
@@ -107,16 +114,16 @@ sealed class Upgrade
     /// <summary>The ring's icon: see <see cref="Rings"/>.</summary>
     public string Icon;
     public Kind Kind;
-    Step[] path;
-    /// <summary>The ranks of this line, under the ensigns flown.</summary>
-    public Step[] Path { get => Variant?.Invoke() ?? path; set => path = value; }
-    /// <summary>A different path for the ensigns flown, or null for the usual one. Must be as long.</summary>
-    public System.Func<Step[]> Variant;
+    /// <summary>The ranks of this line.</summary>
+    public Step[] Path;
     /// <summary>The weapon systems this upgrade would boost on one ship; empty for a fleet upgrade.</summary>
     public System.Func<ObjectBase, IEnumerable<WeaponSystem>> Systems;
+    /// <summary>A ship that makes the upgrade worth offering though nothing on it is boosted yet.</summary>
+    public System.Func<ObjectBase, bool> Carries;
 
     public int MaxRank => Path.Length;
-    public bool Fits(IEnumerable<ObjectBase> fleet) => Kind == Kind.Fleet || fleet.Any(s => s != null && !s.IsDestroyed && Systems(s).Any());
+    public bool Fits(IEnumerable<ObjectBase> fleet) => Kind == Kind.Fleet ||
+        fleet.Any(s => s != null && !s.IsDestroyed && (Systems(s).Any() || Carries?.Invoke(s) == true));
 }
 
 /// <summary>One row of a card's table: a stat of a weapon, now and after the card. A note has only a label.</summary>
@@ -439,56 +446,76 @@ static class Upgrades
     }
 
     /// <summary>
-    /// Three refits, air resupply every minute and every weapon an aircraft
-    /// fires ×4 over the path, on top of what the anti-ship, SAM and gun lines
-    /// give the same rounds. Air-to-air missiles gain little from a bigger
-    /// warhead, so the damage ranks also add 20 points of hit chance to them,
-    /// on top of the SAM line's. Refits take strike flights from unguided bombs to
-    /// guided ones and on to Harpoons, the last bringing a Soviet wing a Backfire
-    /// for each strike aircraft instead, and fighters from Phantoms to Phoenix
-    /// Tomcats or from MiG-23s to MiG-25s (see <see cref="Refits"/>). A flight
-    /// with no carrier is useless once its pylons are empty, so the rest of
-    /// the line keeps them full. Offered for chest and starting flights only:
-    /// a Kiev's own aircraft rearm on its deck, and no refit reaches them,
-    /// though the line's damage does.
-    /// Under the Argentine and Dutch ensigns flights carry only bombs, so the
-    /// refits give way to the bombs, and to the airframes of every aircraft,
-    /// fighters included.
+    /// One path for every aircraft, which each takes as its source and the
+    /// ensigns allow. Every weapon an aircraft fires ×5, bombs ÷3 the scatter
+    /// and 20 points of air-to-air hit chance (a bigger warhead does little
+    /// for those), on top of what the anti-ship, SAM and gun lines give the
+    /// same rounds; air resupply, every minute by the end; and the airframe
+    /// ranks, speed ×1.5, turn ×1.46 and radar signature ÷4, for every
+    /// aircraft. The fifth, fifteenth and twentieth ranks also refit chest and
+    /// starting flights on a ladder (see <see cref="Refits"/>): strike from
+    /// unguided bombs to Harpoons, the last bringing a Soviet wing a Backfire
+    /// for each strike aircraft instead, fighters from Phantoms to Phoenix
+    /// Tomcats or MiG-23s to MiG-25s. A Kiev's own aircraft are not refitted
+    /// but loaded heavier on the same ranks (see <see cref="DeckStores"/>),
+    /// and under the Argentine and Dutch ensigns, whose flights carry only
+    /// bombs, no flight is. Offered with any flight in the fleet, and with a
+    /// Kiev from the start, since her aircraft are not built until they launch.
     /// </summary>
     public static readonly Upgrade AirWing = MakeAirWing();
 
+    /// <summary>Whether this run's flights take refits: not under the bombs-only ensigns.</summary>
+    internal static bool RefitsAllowed => !Ensigns.BombsOnly;
+
     static Upgrade MakeAirWing()
     {
-        var d = Step.Blend(
-            new Step(Stat.Damage, 1.1892f, "Every weapon your aircraft fire hits {0}× as hard"),
+        var firepower = Step.Blend(
+            new Step(Stat.Damage, 1.2247f, "Every weapon your aircraft fire hits {0}× as hard"),
+            new Step(Stat.Accuracy, 0.8691f, "Bombs land {0}× as close"),
             Step.Chance(Stat.KillChance, 0.25f, 0.3f, "Air-to-air missile hit chance +{0} points"));
         var r = new Step(Stat.Reload, 0.8409f, "Air resupply comes {0}× as often");
-        var resupply = new Step(Stat.Resupply, 1f, "Flights rearm in the air every 4 minutes, not only at level-ups", "Air resupply");
-
-        var bombs = Step.Blend(
-            new Step(Stat.Damage, 1.1892f, "Bombs and rockets hit {0}× as hard"),
-            new Step(Stat.Accuracy, 0.8691f, "Bombs land {0}× as close"));
         var agile = Step.Blend(r, new Step(Stat.Turn, 1.1f, "Aircraft turn {0}× as hard"));
-        var decoys = Step.Blend(r, Step.Chance(Stat.Spoof, 0.25f, 0.6f, "Aircraft chaff spoof chance +{0} points"));
-        Step[] ironBombs =
+        var stealthy = Step.Blend(r,
+            new Step(Stat.Rcs, 0.8409f, "Aircraft radar signature ÷{0}"),
+            Step.Chance(Stat.Spoof, 0.25f, 0.6f, "Aircraft chaff spoof chance +{0} points"));
+        var resupply = new Step(Stat.Resupply, 1f, "Aircraft in the air rearm every 4 minutes, not only at level-ups, and a Kiev's own refuel too", "Air resupply");
+
+        // An airframe rank that also refits the flights a refit reaches, and
+        // loads a Kiev's own anti-ship Yak-38s heavier (see DeckStores).
+        Step Stage(Step airframe, string refit, string refitName, string deck)
         {
-            bombs, bombs, bombs, bombs, new Step(Stat.Speed, 1.25f, "Aircraft fly 1.25× as fast", "Uprated engines"),
-            bombs, bombs, bombs, bombs, resupply,
-            agile, agile, agile, agile, new Step(Stat.Rcs, 0.5f, "Aircraft have half the radar signature", "Radar-absorbent paint"),
-            decoys, decoys, decoys, decoys, new Step(Stat.Speed, 1.2f, "Aircraft fly 1.2× as fast again", "Stripped airframe"),
-        };
+            var step = Step.Blend(new Step(Stat.Refit, 1f, refit, refitName), airframe);
+            return step.Reading(() =>
+            {
+                string text = airframe.Text, name = airframe.Name;
+                if (RefitsAllowed) { text += $". Flights refit: {refit}"; name = refitName; }
+                if (Escorts.KievRun(Run.Current)) text += $". The Kiev's anti-ship Yak-38s carry {deck}";
+                return (name, text);
+            });
+        }
 
         return new Upgrade
         {
             Name = "Air wing", Short = "Air wing", Icon = "air", Kind = Kind.Weapon,
-            Systems = s => Run.Current != null && Run.Current.AirWing.ContainsKey(s) ? Boosts.Hardpoints(s, _ => true) : Enumerable.Empty<WeaponSystemHardpoint>(),
-            Variant = () => Ensigns.BombsOnly ? ironBombs : null,
+            Systems = s => Run.Current != null && (Run.Current.AirWing.ContainsKey(s) || Escorts.FromDeck(Run.Current, s))
+                ? Boosts.Hardpoints(s, _ => true) : Enumerable.Empty<WeaponSystemHardpoint>(),
+            // Its aircraft are not built until they launch, so the deck itself is enough.
+            Carries = Escorts.IsKiev,
             Path = new[]
             {
-                d, d, d, d, new Step(Stat.Refit, 1f, "A-7Es stay, with Walleye guided bombs; Yak-38s become Su-24As with AS-14s; F-4Js become F-14As; MiG-23MSs become MiG-23MLDs", "Guided weapons refit"),
-                d, d, d, d, resupply,
-                r, r, r, r, new Step(Stat.Refit, 1f, "A-7Es become A-6Es with two Harpoons; Su-24As become Su-24Ms with AS-14s and KAB-500Ls; F-14As carry a Phoenix; MiG-23MLDs become MiG-25PDs", "New aircraft refit"),
-                r, r, r, r, new Step(Stat.Refit, 1f, "A-6Es and Hornets carry four Harpoons; F-14As carry four Phoenix; a Tu-22M2 with three AS-4s joins for each Soviet strike aircraft; MiG-25PDs fly 1.4× as fast and turn 1.5× as hard", "Heavy loadout refit"),
+                firepower, firepower, firepower, firepower,
+                Stage(new Step(Stat.Speed, 1.25f, "Aircraft fly 1.25× as fast", "Uprated engines"),
+                      "A-7Es stay, with Walleye guided bombs; Yak-38s become Su-24As with AS-14s; F-4Js become F-14As; MiG-23MSs become MiG-23MLDs", "Guided weapons refit",
+                      "two S-25 rockets inboard of their two FAB-500s"),
+                firepower, firepower, firepower, firepower, resupply,
+                agile, agile, agile, agile,
+                Stage(new Step(Stat.Rcs, 0.5f, "Aircraft have half the radar signature", "Radar-absorbent paint"),
+                      "A-7Es become A-6Es with two Harpoons; Su-24As become Su-24Ms with AS-14s and KAB-500Ls; F-14As carry a Phoenix; MiG-23MLDs become MiG-25PDs", "New aircraft refit",
+                      "four FAB-500s"),
+                stealthy, stealthy, stealthy, stealthy,
+                Stage(new Step(Stat.Speed, 1.2f, "Aircraft fly 1.2× as fast again", "Stripped airframe"),
+                      "A-6Es and Hornets carry four Harpoons; F-14As carry four Phoenix; a Tu-22M2 with three AS-4s joins for each Soviet strike aircraft; MiG-25PDs fly 1.4× as fast and turn 1.5× as hard", "Heavy loadout refit",
+                      "four FAB-500s that hit 1.8× as hard over twice the blast radius"),
             },
         };
     }

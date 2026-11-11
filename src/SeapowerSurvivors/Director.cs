@@ -387,7 +387,7 @@ public class Director : MonoBehaviour
         committed = CombatHooks.IncomingAntiShip() + afloat.Where(u => !OutOfFiringRange(u, run)).Sum(MissilesCommitted);
         pendingMissiles = afloat.Where(u => OutOfFiringRange(u, run)).Sum(MissilesCommitted);
         CombatHooks.LogEnemyLaunches(player);
-        float closestEnemy = afloat.Where(u => !u.IsAirUnit).Select(u => (float)u._geoPosition.getDistanceInMiles(player._geoPosition)).DefaultIfEmpty(float.PositiveInfinity).Min();
+        float closestEnemy = afloat.Where(u => !u.IsAirUnit).Select(u => Spawner.Nm(u._geoPosition, player._geoPosition)).DefaultIfEmpty(float.PositiveInfinity).Min();
         bool finale = InFinale;
         if (finale && !finaleStarted)
         {
@@ -644,7 +644,7 @@ public class Director : MonoBehaviour
         float strike = Reach.EnemyStrikeNm(unit, run.Ship);
         if (strike <= 0f) return true;
         float nearest = run.Fleet.Where(s => s != null && !s.IsDestroyed && !s.IsAirUnit)
-            .Select(s => (float)unit._geoPosition.getDistanceInMiles(s._geoPosition))
+            .Select(s => Spawner.Nm(unit._geoPosition, s._geoPosition))
             .DefaultIfEmpty(0f).Min();
         return nearest > strike + Script.PendingMarginNm;
     }
@@ -846,7 +846,7 @@ public class Director : MonoBehaviour
             var front = Spawner.Offset(player._geoPosition, distance, bearing);
             for (int i = 0; i < made.Count; i++)
                 Spawner.MoveTo(made[i], Sea.Abreast(front, bearing, i));
-            double measured = made[0]._geoPosition.getDistanceInMiles(player._geoPosition);
+            double measured = Spawner.Nm(made[0]._geoPosition, player._geoPosition);
             where = $"{distance:F1} nm (fleet reach {edge - Reach.ApproachNm:F1}{how}, game measures {measured:F1})";
         }
         wave?.Add(bearing);

@@ -115,7 +115,7 @@ static class Formations
         var slots = Candidates(formation).ToList();
         var taken = Occupied(formation);
         var leader = formation.LeaderStation.UnitObject;
-        float course = leader.transform.eulerAngles.y;
+        float course = Spawner.TrueHeading(leader);
         float clearance = ClearanceNm * NmToUnity;
         bool IsClear(Slot slot) => taken.All(p => Flat(p - slot.World).sqrMagnitude >= clearance * clearance);
         bool HasRoom(Slot slot) => HasSeaRoom(slot.At, course);

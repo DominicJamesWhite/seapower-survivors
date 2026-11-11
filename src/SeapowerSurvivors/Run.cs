@@ -135,14 +135,19 @@ sealed class Run
     /// Every level-up refills every ship: magazines, launchers, canisters and
     /// guns, through the game's own rearm. Level-ups are the ammunition supply.
     /// Rearming makes fresh rounds, so the upgrades are written into them again.
-    /// Aircraft pylons have no refill in the game, so they are reloaded apart.
+    /// Aircraft pylons have no refill in the game, so they are reloaded apart:
+    /// the air wing's, and those of deck aircraft in the air, which are
+    /// refuelled too (the air wing flies on unlimited fuel).
     /// </summary>
     internal void RearmFleet()
     {
         foreach (var ship in Fleet)
             if (ship != null && !ship.IsDestroyed) ship.RearmAll();
-        int stores = AirWing.Keys.Sum(Pylons.Reload);
-        if (stores > 0) Entry.Log.LogInfo($"Rearm: {stores} store(s) hung on the air wing's pylons");
+        // Only noted aircraft load anything, so ships add nothing here.
+        int stores = Fleet.Concat(AirWing.Keys).Distinct().Sum(Pylons.Reload);
+        if (stores > 0) Entry.Log.LogInfo($"Rearm: {stores} store(s) hung on aircraft pylons");
+        int refuelled = Escorts.RefuelDeckAircraft(this);
+        if (refuelled > 0) Entry.Log.LogInfo($"Rearm: {refuelled} deck aircraft refuelled in the air");
         Boosts.ApplyFleet(this);
     }
 }

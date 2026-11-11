@@ -173,9 +173,11 @@ static class EcmFit
     {
         try
         {
-            var marker = Globals._mainGameViewModel?.Map?.MapKnownUnits?.AllUnits?.FirstOrDefault(u => u.Unit?.BaseObject == ship);
-            if (marker == null) return;
-            var cone = new SeapowerUI.JamConeViewModel(jammer, ship.Position);
+            var map = Globals._mainGameViewModel?.Map;
+            var marker = map?.MapKnownUnits?.AllUnits?.FirstOrDefault(u => u.Unit?.BaseObject == ship);
+            // Since 0.9.0 the map draws from a set of sources, and a cone joins the map's as it is made.
+            if (marker == null || map.Sources == null) return;
+            var cone = new SeapowerUI.JamConeViewModel(map.Sources, jammer, ship.Position);
             void Sync()
             {
                 bool show = marker.Selected && jammer.Jams.Value;
@@ -234,7 +236,7 @@ static class EcmFit
         float reach = ep._maxRange / UnityPerNm;
 
         bool InCone(ObjectBase o) => axis.HasValue &&
-            (float)ship._geoPosition.getDistanceInMiles(o._geoPosition) <= reach &&
+            Spawner.Nm(ship._geoPosition, o._geoPosition) <= reach &&
             Mathf.Abs(Mathf.DeltaAngle(ship._geoPosition.HeadingRangeMeters(o._geoPosition).heading, axis.Value)) <= ep._jamConeFov / 2f;
 
         // What enemy radars read: a target screened by this jammer is harder to find.

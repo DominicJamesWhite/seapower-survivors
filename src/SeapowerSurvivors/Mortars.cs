@@ -202,16 +202,20 @@ static class Mortars
     /// <see cref="Engage"/>, only at ships already in reach and arc, so it never
     /// has to close. Submarines and torpedoes are left to the game.
     /// </summary>
-    [HarmonyPatch(typeof(AI), nameof(AI.AmmoForTarget))]
+    /// <remarks>
+    /// Since 0.9.0 the AI fills a list it is handed, and the overload that
+    /// returns one only calls this, so this is the one to patch.
+    /// </remarks>
+    [HarmonyPatch(typeof(AI), nameof(AI.AmmoForTarget), typeof(ObjectBase), typeof(List<string>), typeof(bool))]
     static class AiLeavesMortarsAlone
     {
         static readonly AccessTools.FieldRef<AI, ObjectBase> AiShip = AccessTools.FieldRefAccess<AI, ObjectBase>("_baseObject");
 
-        static void Postfix(AI __instance, ObjectBase targetObject, List<string> __result)
+        static void Postfix(AI __instance, ObjectBase targetObject, List<string> matchingAmmo)
         {
-            if (Run.Current == null || __result.Count == 0 || !(targetObject is Vessel)) return;
+            if (Run.Current == null || matchingAmmo == null || matchingAmmo.Count == 0 || !(targetObject is Vessel)) return;
             var ship = AiShip(__instance);
-            __result.RemoveAll(name => ship.getAmmunitionByName(name)?._ap is AmmunitionParameters ap && Boosts.Mortar(ap));
+            matchingAmmo.RemoveAll(name => ship.getAmmunitionByName(name)?._ap is AmmunitionParameters ap && Boosts.Mortar(ap));
         }
     }
 
@@ -323,7 +327,7 @@ static class Mortars
             var aim = lead + rbu._deviationVector;
             aim.y = 0f;
             rbu._estimatedInterceptTargetPosition = aim;
-            rbu._estimatedInterceptTargetPosition2.FromUnity(aim);
+            rbu._estimatedInterceptTargetPosition2 = new GeoPosition(aim);
 
             var course = aim - here;
             course.y = 0f;

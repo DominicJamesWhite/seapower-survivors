@@ -184,7 +184,7 @@ static class CombatHooks
         foreach (var missile in AntiShipInFlight().ToList())
             if (launchesSeen.Add(missile))
                 Entry.Log.LogInfo($"Enemy launch: {missile._ap._ammunitionFileName} from {missile._launchPlatform?.Name.Value ?? "unknown"}, " +
-                                  $"{missile._geoPosition.getDistanceInMiles(flagship._geoPosition):F1} nm from the flagship, {launchesSeen.Count} in the air");
+                                  $"{Spawner.Nm(missile._geoPosition, flagship._geoPosition):F1} nm from the flagship, {launchesSeen.Count} in the air");
     }
 
     /// <summary>
@@ -251,7 +251,7 @@ static class CombatHooks
         float closest = float.PositiveInfinity;
         foreach (var missile in AntiShipInFlight())
             foreach (var ship in ships)
-                closest = System.Math.Min(closest, (float)missile._geoPosition.getDistanceInMiles(ship._geoPosition));
+                closest = System.Math.Min(closest, Spawner.Nm(missile._geoPosition, ship._geoPosition));
         return closest;
     }
 

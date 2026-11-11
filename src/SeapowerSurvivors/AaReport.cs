@@ -77,7 +77,8 @@ static class AaReport
         {
             float ground = envelope * f;
             float slant = Mathf.Sqrt(ground * ground + altitude * altitude);
-            var b = gun.BuildAaErrorBudget(ammo, slant, speed, jink, 1000f, altitude);
+            // Since 0.9.0 the budget takes no target height: the argument after the track age is a time of flight to use instead of the table's.
+            var b = gun.BuildAaErrorBudget(ammo, slant, speed, jink, 1000f);
             WeaponSystemGun.SimulateAaShells(in b, fuzeRadius + bodyRadius, bodyRadius, fuzeRadius, damage, out float hit, out float perShell, 300, WeaponSystemGun.AaRangeErrorKills(ap));
             string kill = perShell > 1e-6f ? $"{durability._health / perShell:0}" : "never";
             float m = MetresPerUnit;

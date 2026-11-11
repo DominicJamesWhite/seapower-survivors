@@ -57,6 +57,14 @@ static class Pylons
         return list.Count;
     }
 
+    internal static bool Noted(ObjectBase aircraft) => stations.TryGetValue(aircraft, out _);
+
+    /// <summary>
+    /// Drop what was noted for the aircraft. A deck aircraft is rearmed on deck
+    /// with whatever loadout it is given there, so it is noted again at takeoff.
+    /// </summary>
+    internal static void Forget(ObjectBase aircraft) => stations.Remove(aircraft);
+
     /// <summary>Hang a fresh round on every station that has fired. Returns how many.</summary>
     internal static int Reload(ObjectBase aircraft)
     {

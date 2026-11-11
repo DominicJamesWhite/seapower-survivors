@@ -235,7 +235,7 @@ static class Escorts
         var flagship = run.Ship;
         var formation = Formations.Of(run);
         var slot = Formations.FindStation(formation);
-        var ship = Spawner.Ship(escort.Type, slot.At, flagship.transform.eulerAngles.y, Globals._playerTaskforce, Launcher.FitOf(escort.Type) ?? "default");
+        var ship = Spawner.Ship(escort.Type, slot.At, Spawner.TrueHeading(flagship), Globals._playerTaskforce, Launcher.FitOf(escort.Type) ?? "default");
         if (ship == null)
         {
             TestPanel.Report($"Could not spawn {escort.Name} ({escort.Type})");
@@ -253,7 +253,7 @@ static class Escorts
     internal static void JoinFlight(Run run, Escort escort, int copy, int? size = null)
     {
         var flagship = run.Ship;
-        float heading = flagship.transform.eulerAngles.y;
+        float heading = Spawner.TrueHeading(flagship);
         int joined = 0, stores = 0;
         // The Australian ensign: every flight, from the start or a card, has twice the aircraft.
         int count = size ?? escort.Count * Ensigns.AircraftFactor(run.Hoisted, escort);
@@ -299,7 +299,7 @@ static class Escorts
         float clearNm = StandOffMinimumNm / (Upgrades.Total(run, Upgrades.AntiShip, Stat.Range) * Ensigns.MissileReach) + StandOffMarginNm;
         var enemies = Singleton<ObjectsManager>.Instance._listOfAllNonPlayerVesselObjects
             .Where(v => v != null && !v.IsDestroyed).Select(v => v._geoPosition).ToList();
-        float astern = flagship.transform.eulerAngles.y + 180f;
+        float astern = Spawner.TrueHeading(flagship) + 180f;
 
         float NearestNm(GeoPosition at) =>
             enemies.Count == 0 ? float.MaxValue : enemies.Min(e => (float)at.GetDistance(e) / UnityPerNm);
@@ -333,29 +333,82 @@ static class Escorts
     /// <summary>
     /// Aircraft the player launches from a fleet ship's own deck (a Kiev's)
     /// are fleet as they appear, so every upgrade reaches them as it does a
-    /// chest flight. They are not the air wing: they go home to rearm, and
-    /// the game hangs fresh rounds on them there, so the upgrades are written
-    /// in again every tick.
+    /// chest flight. They are not the air wing: they still burn fuel and go
+    /// home, and the game hangs fresh rounds on them there, so the upgrades
+    /// are written in again every tick. In the air, a level-up rearms and
+    /// refuels them as it does the air wing. Their pylons are noted at each
+    /// takeoff, since the deck may give them a different loadout each sortie.
     /// </summary>
     static void TendDeckAircraft(Run run)
     {
         run.Fleet.RemoveAll(s => s == null);
-        var deck = Singleton<ObjectsManager>.Instance._listOfAllPlayerAircraftObjects
-            .Where(a => a != null && !a.IsDestroyed && !run.AirWing.ContainsKey(a) && a._homeBase != null && run.Fleet.Contains(a._homeBase))
-            .ToList();
+        var deck = DeckAircraft(run).ToList();
         if (deck.Count == 0) return;
-        foreach (var aircraft in deck.Where(a => !run.Fleet.Contains(a)))
+        foreach (var aircraft in deck)
         {
-            run.Fleet.Add(aircraft);
-            Entry.Log.LogInfo($"{aircraft.Name.Value} ({aircraft._obp._objectIniName}) from {aircraft._homeBase.Name.Value}'s deck joins the fleet");
+            if (!run.Fleet.Contains(aircraft))
+            {
+                run.Fleet.Add(aircraft);
+                Entry.Log.LogInfo($"{aircraft.Name.Value} ({aircraft._obp._objectIniName}) from {aircraft._homeBase.Name.Value}'s deck joins the fleet");
+            }
+            if (!InFlight(aircraft))
+            {
+                Pylons.Forget(aircraft);
+                continue;
+            }
+            if (!Pylons.Noted(aircraft)) Pylons.Note(aircraft);
+            DeckStores.Tend(run, aircraft);
         }
-        Boosts.ApplyTo(run, deck);
+        // A swap on to heavier stores leaves a fresh aircraft in the old one's place.
+        Boosts.ApplyTo(run, DeckAircraft(run).ToList());
+    }
+
+    static IEnumerable<ObjectBase> DeckAircraft(Run run) =>
+        Singleton<ObjectsManager>.Instance._listOfAllPlayerAircraftObjects
+            .Where(a => a != null && !a.IsDestroyed && FromDeck(run, a));
+
+    /// <summary>An aircraft from a fleet ship's own deck, not the air wing.</summary>
+    internal static bool FromDeck(Run run, ObjectBase aircraft) =>
+        aircraft.IsAirUnit && !run.AirWing.ContainsKey(aircraft) && aircraft._homeBase != null && run.Fleet.Contains(aircraft._homeBase);
+
+    const string Kiev = "wp_takr_kiev";
+    internal static bool IsKiev(ObjectBase ship) => ship._obp != null && ship._obp._objectIniName == Kiev;
+    /// <summary>A run that started in a Kiev, whose Air wing line is her Yak-38s' own.</summary>
+    internal static bool KievRun(Run run) => run != null && run.FlagshipType == Kiev;
+
+    static bool InFlight(ObjectBase aircraft) =>
+        aircraft is Aircraft { _isInFlight: true } || aircraft is Helicopter { _isInFlight: true };
+
+    /// <summary>
+    /// Fill the tanks of every deck aircraft in the air, as the deck's own
+    /// fuel line does: fuel mass first, the range read from it. Returns how many.
+    /// </summary>
+    internal static int RefuelDeckAircraft(Run run)
+    {
+        int filled = 0;
+        foreach (var a in DeckAircraft(run).Where(InFlight))
+        {
+            if (a is Aircraft plane)
+            {
+                plane.Ap._currentFuelMass = plane.Ap._maxFuel;
+                plane.RangeInKm.Value = plane.Ap._maxRangeInKm;
+            }
+            else if (a is Helicopter helo)
+            {
+                helo._hp._currentFuelMass = helo._hp._maxFuel;
+                helo.RangeInKm.Value = helo._hp._maxRangeInKm;
+            }
+            else continue;
+            filled++;
+        }
+        return filled;
     }
 
     /// <summary>
-    /// Air resupply, from the Air wing line: every few minutes the air wing's
-    /// pylons are rehung as a level-up rehangs them, with the run's upgrades
-    /// written into the fresh rounds. The first comes as soon as it is taken.
+    /// Air resupply, from the Air wing line: every few minutes the pylons of
+    /// the air wing and of deck aircraft in the air are rehung as a level-up
+    /// rehangs them, with the run's upgrades written into the fresh rounds,
+    /// and deck aircraft are refuelled. The first comes as soon as it is taken.
     /// </summary>
     static void Resupply(Run run)
     {
@@ -363,9 +416,11 @@ static class Escorts
         double now = SeaPower.GameTime.missionElapsedTime;
         if (now - run.LastResupply < ResupplySeconds * Upgrades.Total(run, Upgrades.AirWing, Stat.Reload)) return;
         run.LastResupply = now;
-        int stores = run.AirWing.Keys.Sum(Pylons.Reload);
-        if (stores == 0) return;
-        Boosts.ApplyFleet(run);
-        TestPanel.Report($"Air resupply: {stores} store(s) hung on the air wing's pylons");
+        // Only noted aircraft load anything: the air wing, and deck aircraft in the air.
+        int stores = run.Fleet.Concat(run.AirWing.Keys).Distinct().Sum(Pylons.Reload);
+        int refuelled = RefuelDeckAircraft(run);
+        if (stores == 0 && refuelled == 0) return;
+        if (stores > 0) Boosts.ApplyFleet(run);
+        TestPanel.Report($"Air resupply: {stores} store(s) hung on aircraft pylons, {refuelled} deck aircraft refuelled");
     }
 }

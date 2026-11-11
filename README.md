@@ -20,7 +20,7 @@ To build from source instead, with Sea Power and Anchor Chain installed:
 dotnet build src/SeapowerSurvivors -c Release
 ```
 
-This builds against the installed game (last built against 0.8.7 Build 261021)
+This builds against the installed game (last built against 0.9.0 Build 261111)
 and copies the DLL and everything in [mod/](mod/) into
 `Sea Power_Data/StreamingAssets/SeapowerSurvivors/`.
 

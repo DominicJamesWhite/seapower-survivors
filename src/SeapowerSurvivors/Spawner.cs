@@ -16,6 +16,7 @@ static class Spawner
     /// <summary>Full ahead. A run is fifteen minutes; there is no time to arrive at a third of it.</summary>
     const int FlankTelegraph = 5;
 
+    /// <param name="heading">From true north; the game turns it into the scene's.</param>
     internal static Vessel Ship(string type, GeoPosition at, float heading, Taskforce side, string fit = "default")
     {
         var objects = Singleton<ObjectsManager>.Instance;
@@ -116,11 +117,12 @@ static class Spawner
     }
 
     /// <summary>
-    /// A point at this distance and bearing. Sea Power's world is a flat
-    /// latitude/longitude grid, where a degree of longitude is 60 nm at every
-    /// latitude (GeoPosition.GetDistanceInDeg, Utils.longLatToLocalV3), so no
-    /// cos(latitude) correction: adding one stretched east-west offsets 2.1x
-    /// at 62 N and put "16.8 nm" spawns 30 nm away.
+    /// A point at this distance and true bearing, by the game's own sum. Up to
+    /// 0.8.7 the world was a flat latitude/longitude grid, a degree of longitude
+    /// 60 nm at every latitude; since 0.9.0 it is a globe drawn on a Lambert
+    /// projection centred on the mission, and the game's sum follows a great
+    /// circle. Either way it is the game's, so a "16.8 nm" spawn is 16.8 nm away
+    /// in the scene: never correct it for latitude here.
     /// </summary>
     internal static GeoPosition Offset(GeoPosition from, float distanceNm, float bearingDeg)
     {
@@ -128,6 +130,18 @@ static class Spawner
         to._height = 0.0;
         return to;
     }
+
+    /// <summary>Nautical miles between two positions, level, as the scene measures them.</summary>
+    internal static float Nm(GeoPosition a, GeoPosition b) => (float)(a.GetDistance(b) * Constants.UNITY_TO_MILES);
+
+    /// <summary>
+    /// The way a unit points, from true north. On the projection the scene's
+    /// north is not true north away from the map's centre (a few degrees at
+    /// 100 nm in high latitudes), and bearings to <see cref="Offset"/> and
+    /// headings to <see cref="Ship"/> and <see cref="Aircraft"/> are true.
+    /// </summary>
+    internal static float TrueHeading(ObjectBase unit) =>
+        Utils.UnityYawToTrueHeading(unit.transform.eulerAngles.y, unit._geoPosition);
 
     static void Place(ObjectBase unit, GeoPosition at)
     {

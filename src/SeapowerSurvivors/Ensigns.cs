@@ -164,8 +164,8 @@ static class Ensigns
 
     /// <summary>
     /// Strike flights carry bombs alone, under the Argentine ensign by choice and
-    /// the Dutch because their missiles are withheld. The Air wing line then runs
-    /// its bombs path: a refit would only hang missiles on them.
+    /// the Dutch because their missiles are withheld. The Air wing line then
+    /// refits no one: a refit would only hang missiles on them.
     /// </summary>
     internal static bool BombsOnly => Active(IronBombs) || Active(LongCiws);
 

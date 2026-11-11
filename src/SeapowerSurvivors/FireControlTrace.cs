@@ -244,8 +244,12 @@ static class EngageLoopGuard
         __state = (__instance._currentEngageTasks, __instance._currentEngageTasks.Count);
     }
 
-    /// <summary>The loop asks for each task's weapons first, at the top of every iteration that gets that far.</summary>
-    [HarmonyLib.HarmonyPatch(typeof(WeaponSelector), nameof(WeaponSelector.GetWeaponSystemsForAmmunition))]
+    /// <summary>
+    /// The loop asks for each task's weapons first, at the top of every iteration that gets that far.
+    /// Since 0.9.0 it calls the overload that fills a list; the one that returns a list calls it too.
+    /// </summary>
+    [HarmonyLib.HarmonyPatch(typeof(WeaponSelector), nameof(WeaponSelector.GetWeaponSystemsForAmmunition),
+        typeof(ObjectBase), typeof(Vector3), typeof(string), typeof(ObjectBase), typeof(List<WeaponSystem>), typeof(bool))]
     static class Systems
     {
         static void Prefix(ObjectBase obj, string ammoId, ObjectBase targetObject)

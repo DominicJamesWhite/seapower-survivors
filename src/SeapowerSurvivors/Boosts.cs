@@ -92,9 +92,8 @@ static class Boosts
 
     static void Apply(Run run, ObjectBase ship)
     {
-        // The Air wing line, on every round an aircraft fires. Under the Argentine
-        // and Dutch ensigns its damage is for bombs and rockets alone, below.
-        float airDamage = ship.IsAirUnit && !Ensigns.BombsOnly ? Upgrades.Total(run, Upgrades.AirWing, Stat.Damage) : 1f;
+        // The Air wing line, on every round an aircraft fires; bombs and rockets below.
+        float airDamage = ship.IsAirUnit ? Upgrades.Total(run, Upgrades.AirWing, Stat.Damage) : 1f;
         float gunRof = Upgrades.Total(run, Upgrades.Guns, Stat.RateOfFire);
         float gunDamage = Upgrades.Total(run, Upgrades.Guns, Stat.Damage) * (Upgrades.Has(run, Upgrades.HeavyShells) ? HeavyShellsFactor : 1f);
         float gunRange = Upgrades.Total(run, Upgrades.Guns, Stat.Range) * (Upgrades.Has(run, Upgrades.LongShots) ? LongShotsFactor : 1f) * Ensigns.GunReach;
@@ -162,9 +161,12 @@ static class Boosts
         // Air wing: bombs and rockets. Its scatter ranks are the bombs path's alone.
         float strikeDamage = Upgrades.Total(run, Upgrades.AirWing, Stat.Damage);
         float bombScatter = (Ensigns.Active(Ensigns.IronBombs) ? Ensigns.IronBombScatter : 1f) * Upgrades.Total(run, Upgrades.AirWing, Stat.Accuracy);
+        // A Kiev's Yaks on their last rung carry heavier bombs again.
+        bool heavyBombs = DeckStores.Heavy(ship);
         foreach (var ap in PylonAmmo(ship).Where(StrikeStore))
         {
-            ap._warheadPower = Base(ap, "power", ap._warheadPower) * strikeDamage;
+            ap._warheadPower = Base(ap, "power", ap._warheadPower) * strikeDamage * (heavyBombs ? DeckStores.HeavyDamage : 1f);
+            ap._impactSizeUnity = Base(ap, "blast", ap._impactSizeUnity) * (heavyBombs ? DeckStores.HeavyBlast : 1f);
             if (ap._type == Ammunition.Type.Bomb && ap._guidanceType == AmmunitionParameters.GuidanceType.None)
                 ap._circularErrorRadius = Base(ap, "scatter", ap._circularErrorRadius) * bombScatter;
         }
@@ -454,14 +456,12 @@ static class Boosts
     /// The Estonian ensign on every aircraft of the fleet, and the Argentine on
     /// strike aircraft: a smaller signature, and for the Argentine a steadier
     /// bomb run, on a moving ship as much as a still one. The Air wing line's
-    /// airframe ranks, which only the bombs path has (the Argentine and Dutch
-    /// ensigns'), on every aircraft: fighters have nothing else on that path.
+    /// airframe ranks, on every aircraft, and its bomb accuracy on strike aircraft.
     /// </summary>
     static void ApplyAirWing(Run run, Aircraft aircraft)
     {
         bool argentine = Ensigns.Active(Ensigns.IronBombs);
-        bool strike = Ensigns.BombsOnly &&
-                      (run.AirWing.TryGetValue(aircraft, out var roles) ? (roles & Role.AirStrike) != 0 : PylonAmmo(aircraft).Any(StrikeStore));
+        bool strike = (run.AirWing.TryGetValue(aircraft, out var roles) ? (roles & Role.AirStrike) != 0 : PylonAmmo(aircraft).Any(StrikeStore));
         var data = aircraft._sensorData;
         if (data != null)
         {
@@ -495,8 +495,10 @@ static class Boosts
         if (!Mathf.Approximately(ap._machLimit, machLimit))
         {
             // The speed it was last ordered to hold is a number of its own, so that goes up with the rest.
-            if (aircraft.SpeedCommand.Value is ConstantMach ordered && ap._machLimit > 0f)
-                ordered.SetSpeedInMach(ordered.SpeedInMach * machLimit / ap._machLimit);
+            // Since 0.9.0 an order is a request the aircraft's one speed state resolves, so it is asked again.
+            var ordered = aircraft.SpeedCommand.Value;
+            if (ordered != null && ordered.Kind == SpeedKind.Mach && ap._machLimit > 0f)
+                aircraft.SetSpeedCommand(SpeedRequest.Mach(ordered.SpeedInMach * machLimit / ap._machLimit));
             ap._machLimit = machLimit;
             ap._maxSpeedSeaLevel = Base(ap, "seaLevelSpeed", ap._maxSpeedSeaLevel) * speed;
             ap._cruiseMach = Base(ap, "cruiseMach", ap._cruiseMach) * speed;
@@ -1164,7 +1166,7 @@ static class Boosts
             PreviewStat(run, line, stat, ranks, fleet, rows);
             if (rows.Count > found) preview.Covered.Add(stat);
         }
-        if (Upgrades.StatsIn(line, rank, rank + ranks).Contains(Stat.Refit))
+        if (Upgrades.RefitsAllowed && Upgrades.StatsIn(line, rank, rank + ranks).Contains(Stat.Refit))
             rows.Add(PreviewRow.Note("Delayed while a plane is guiding a weapon in flight"));
         preview.Rows.AddRange(rows.Distinct());
         return preview;
@@ -1189,7 +1191,7 @@ static class Boosts
     /// <summary>A Guns card's rows for aircraft cannon, read from the guns as fitted so the Point defence and Air wing lines are in them.</summary>
     static void PreviewCannons(Run run, Stat stat, int ranks, float now, float next, List<ObjectBase> fleet, List<PreviewRow> rows)
     {
-        float airDamage = Ensigns.BombsOnly ? 1f : Upgrades.Total(run, Upgrades.AirWing, Stat.Damage);
+        float airDamage = Upgrades.Total(run, Upgrades.AirWing, Stat.Damage);
         foreach (var cannon in fleet.SelectMany(AircraftCannons))
         {
             string name = SystemName(cannon);
@@ -1428,12 +1430,10 @@ static class Boosts
             switch (stat)
             {
                 case Stat.Damage:
-                    bool bombsOnly = Ensigns.BombsOnly;
                     // As fitted, so a Harpoon's row has the Anti-ship line's damage in it too.
-                    foreach (var ap in fleet.SelectMany(PylonAmmo).Where(a => a._warheadPower > 0f && (bombsOnly ? StrikeStore(a) : a._subType != Ammunition.Type.Fueltank)))
+                    foreach (var ap in fleet.SelectMany(PylonAmmo).Where(a => a._warheadPower > 0f && a._subType != Ammunition.Type.Fueltank))
                         rows.Add(new PreviewRow(AmmoName(ap), "Damage", F(ap._warheadPower), F(ap._warheadPower * next / now)));
-                    if (!bombsOnly)
-                        foreach (var ap in fleet.SelectMany(AircraftCannons).SelectMany(CiwsAmmo).Where(a => a._warheadPower > 0f))
+                    foreach (var ap in fleet.SelectMany(AircraftCannons).SelectMany(CiwsAmmo).Where(a => a._warheadPower > 0f))
                             rows.Add(new PreviewRow(AmmoName(ap), "Damage", F(ap._warheadPower), F(ap._warheadPower * next / now)));
                     break;
                 case Stat.KillChance:
@@ -1444,7 +1444,7 @@ static class Boosts
                 case Stat.Resupply:
                     rows.Add(new PreviewRow("Flights", "Pylons rearm", "At level-ups", $"Every {F(Escorts.ResupplySeconds / 60f)} min too"));
                     break;
-                case Stat.Refit:
+                case Stat.Refit when Upgrades.RefitsAllowed:
                     int standard = Refits.Standard(run, ranks), before = rows.Count;
                     foreach (var aircraft in run.AirWing.Keys.Where(a => a != null && !a.IsDestroyed))
                     {

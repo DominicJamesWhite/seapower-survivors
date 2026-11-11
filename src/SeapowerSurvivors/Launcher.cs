@@ -54,8 +54,8 @@ sealed class StartingShip
 /// <summary>
 /// Starts a run from the main menu without a scenario: writes a mission file
 /// for the chosen loadout and loads it the way the Scenarios menu's Play
-/// button does, by pointing <c>Globals.currentMissionFilePath</c> at it and
-/// calling <c>MissionManager.DoLoad</c>.
+/// button does, by opening it with <c>Globals.OpenMission</c> and calling
+/// <c>MissionManager.DoLoad</c>.
 /// </summary>
 /// <remarks>
 /// <c>DoLoad</c> loads the mission scene on top of the menu's background
@@ -97,6 +97,18 @@ static class Launcher
     internal static bool Launching;
 
     static string MissionPath => Path.Combine(Application.persistentDataPath, "SeapowerSurvivors", "Survivors run.ini");
+    /// <summary>The path the game gave back when it opened our file; it may pick a different one for a mission it bundles.</summary>
+    static string openedPath;
+
+    /// <summary>
+    /// How far the play area reaches from the run's start, each way. Since 0.9.0
+    /// a mission has a bounded map, and a unit past its edge is moved back onto
+    /// it. Left to itself the game fits the map to what the mission file places,
+    /// which for a run is the fleet alone: about 100 nm each way, inside the
+    /// stand-off ring, the raids' start lines and the bomber's search. 400 nm
+    /// is what the game's own larger scenarios use.
+    /// </summary>
+    const float MapHalfEdgeNm = 400f;
 
     internal static bool AtMainMenu =>
         Singleton<MenuSystemViewModel>.InstanceExists(false) && !Singleton<MissionManager>.InstanceExists(false);
@@ -106,7 +118,7 @@ static class Launcher
     {
         string path = Globals.currentMissionFilePath;
         return Current != null && !string.IsNullOrEmpty(path) &&
-               string.Equals(Path.GetFullPath(path), Path.GetFullPath(MissionPath), StringComparison.OrdinalIgnoreCase);
+               string.Equals(Path.GetFullPath(path), Path.GetFullPath(openedPath ?? MissionPath), StringComparison.OrdinalIgnoreCase);
     }
 
     internal static void Launch(Loadout loadout)
@@ -121,7 +133,8 @@ static class Launcher
 
         Current = loadout;
         Launching = true;
-        Globals.currentMissionFilePath = path;
+        // The game's own way in: it also mounts the mission's data folders, and hands back the path it will load.
+        openedPath = Globals.OpenMission(path);
         try { MissionManager.DoLoad(); }
         catch
         {
@@ -162,6 +175,7 @@ static class Launcher
         ini.AppendLine("Clouds=Clear");
         ini.AppendLine(Invariant($"MapCenterLatitude={start._latitude:F4}"));
         ini.AppendLine(Invariant($"MapCenterLongitude={start._longitude:F4}"));
+        WritePlayArea(ini, start);
         ini.AppendLine("LoadBackgroundData=False");
         ini.AppendLine();
         ini.AppendLine("[Mission]");
@@ -194,6 +208,28 @@ static class Launcher
         ini.AppendLine("Action_EndMission=True");
         ini.AppendLine("Action_Victory=Taskforce2");
         return ini.ToString();
+    }
+
+    /// <summary>
+    /// The map's projection and edge, as the mission editor writes them
+    /// (MissionProjection.Write, LccMigration.WriteProjection): the game's own
+    /// fit from a control point, here due north of the start by the half edge.
+    /// The centre is read as written, so the fit is made from the same rounding.
+    /// </summary>
+    static void WritePlayArea(StringBuilder ini, GeoPosition start)
+    {
+        var centre = new GeoPosition(Math.Round(start._latitude, 4), Math.Round(start._longitude, 4));
+        var control = centre.GeoOffsetByDistanceOnHeading(MapHalfEdgeNm, 0f);
+        var projection = LCC.FromControlPoint(centre, control, PlayArea.DefaultMarginNm, out double extent);
+        const double Degrees = 180.0 / Math.PI;
+        ini.AppendLine(Invariant($"LambertParallel1={projection.parallel_1 * Degrees:G}"));
+        ini.AppendLine(Invariant($"LambertParallel2={projection.parallel_2 * Degrees:G}"));
+        ini.AppendLine(Invariant($"LambertAxisLatitude={projection.axis_lat * Degrees:G}"));
+        ini.AppendLine(Invariant($"LambertAxisLongitude={projection.axis_lon * Degrees:G}"));
+        ini.AppendLine(Invariant($"LambertExtent={extent:G}"));
+        ini.AppendLine(Invariant($"LambertMarginNm={PlayArea.DefaultMarginNm:G}"));
+        ini.AppendLine(Invariant($"LambertControlPointLatitude={control._latitude:G}"));
+        ini.AppendLine(Invariant($"LambertControlPointLongitude={control._longitude:G}"));
     }
 
     /// <summary>One ship on <paramref name="heading"/>, at this station from the flagship: nautical miles to starboard and ahead.</summary>
