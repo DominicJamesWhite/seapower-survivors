@@ -38,8 +38,9 @@ Survivors screen:
 
 - **Location.** Ten sea areas, each with its best score so far. The areas are
   the same as Quick Start's, with thanks to its author.
-- **Fleet.** Choose a flagship and which bought escorts and flights sail with it.
-  **Formation** opens a drag-to-place editor for their stations.
+- **Fleet.** Choose a navy by its flag, then a flagship of that navy and which
+  bought escorts and flights sail with it. **Formation** opens a drag-to-place
+  editor for their stations.
 - **Starting bonuses.** Permanent upgrades, bought rank by rank and refundable:
   Rerolls, Banish, Growth, Luck and Flag transfer.
 - **Ensigns.** Twenty flags, each with one effect and a points cost. A run can
@@ -55,20 +56,45 @@ With Quick Start enabled, they show its paintings of each area instead.
 
 ### Flagships
 
-| Flagship | How to get it |
-|---|---|
-| Sverdlov, Oliver Hazard Perry | Free |
-| Kidd, Sovremenny | 400 XP each |
-| Long Beach | Win in Perry or Kidd |
-| Slava | Win in Sverdlov or Sovremenny |
-| Iowa | Win in Sverdlov |
-| Bunker Hill | Win in Long Beach |
-| Kirov | Win in Slava or Iowa |
-| Kiev | Win in both Bunker Hill and Kirov |
+| Navy | Flagship | How to get it |
+|---|---|---|
+| United States | Oliver Hazard Perry | Free |
+| | Kidd | 400 XP |
+| | Long Beach | Win in Perry or Kidd |
+| | Iowa | Win in Sverdlov |
+| | Bunker Hill | Win in Long Beach |
+| Soviet Union | Sverdlov | Free |
+| | Sovremenny | 400 XP |
+| | Slava | Win in Sverdlov or Sovremenny |
+| | Kirov | Win in Slava or Iowa |
+| | Kiev | Win in both Bunker Hill and Kirov |
+| United Kingdom | Amazon | Free |
+| | Sheffield | 400 XP |
+| | County | Win in Amazon or Sheffield |
+| | Bristol | Win in County |
+| | Invincible | Win in Bristol |
+| | Hermes | Win in Invincible |
+| Argentina | Drummond | Free |
+| | Hércules | 400 XP |
+| | General Belgrano | Win in Drummond or Hércules |
+| | Veinticinco de Mayo | Win in General Belgrano |
+| China | Jianghu I | Free |
+| | Jiangdong | 400 XP |
+| | Jianghu III | Win in Jianghu I or Jiangdong |
+| | Luda | Win in Jianghu III |
+| Japan | Takatsuki | Free |
+| | Hatsuyuki | 400 XP |
+| | Tachikaze | Win in Takatsuki or Hatsuyuki |
 
-Soviet flagships fight NATO, and US flagships fight the Soviets. Starting ships
-cost 200 XP and flights 300. Each one bought sails as its counterpart in the
-flagship's own navy.
+Each navy fights one other: the United States and the Soviet Union (whose
+flagships face NATO), the United Kingdom and Argentina, China and Japan. Kiev,
+Invincible, Hermes and Veinticinco de Mayo are carriers: you launch their
+aircraft yourself, and the Air wing line is theirs from the start.
+
+Starting ships cost 200 XP and flights 300. Every navy has four ships and three
+flights that stand in for one another, so each of those bought sails as its
+counterpart in whichever navy the flagship belongs to. The other starting ships
+are bought for their own navy alone.
 
 ## The run
 
@@ -93,8 +119,11 @@ an escort.
 
 ### What you face
 
-- **Waves.** Each flagship has its own hand-set table of enemies, costs and
-  gates, in [Threats.cs](src/SeapowerSurvivors/Threats.cs). Missile ships and
+- **Waves.** Each US and Soviet flagship has its own hand-set table of enemies,
+  costs and gates, in [Threats.cs](src/SeapowerSurvivors/Threats.cs). The other
+  navies' are built from their enemy's roster in
+  [Rosters.cs](src/SeapowerSurvivors/Rosters.cs) and the flagship's class, and
+  have not been balanced in play. Missile ships and
   aircraft wait until the fleet can answer them. Waves arrive together on spread
   bearings, and ships spawn according to their own weapons' range.
 - **Pressure.** [Pressure.cs](src/SeapowerSurvivors/Pressure.cs) scales missile

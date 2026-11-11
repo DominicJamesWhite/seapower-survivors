@@ -10,14 +10,15 @@ namespace SeapowerSurvivors;
 sealed class Rung
 {
     public readonly int Standard;
-    public readonly string Type, Loadout, Name;
+    public readonly string Type, Loadout, Name, Squadron;
 
-    public Rung(int standard, string type, string loadout, string name)
+    public Rung(int standard, string type, string loadout, string name, string squadron = "Squadron1")
     {
         Standard = standard;
         Type = type;
         Loadout = loadout;
         Name = name;
+        Squadron = squadron;
     }
 }
 
@@ -84,6 +85,49 @@ static class Refits
             new Rung(1, "wp_mig-23mld", "AirToAir", "MiG-23MLD, AA-7s and AA-8s"),
             new Rung(2, "wp_mig-25pd", "AirToAirLongRange", "MiG-25PD, AA-6s and AA-8s"),
         },
+        // British: the Harrier fills its tank stations with bombs, then gives way to the Nimrod's Harpoons. Sea Harriers have
+        // one air-to-air loadout, so British fighters take the line's airframe ranks alone.
+        new[]
+        {
+            new Rung(0, "raf_gr3", "Strike", "Harrier GR.3, three 1,000 lb bombs"),
+            new Rung(1, "raf_gr3", "StrikeHeavy", "Harrier GR.3, five 1,000 lb bombs"),
+            new Rung(2, "rn_nimrod_mr2", "AntiShip", "Nimrod MR.2, two Harpoons"),
+        },
+        // Argentine: a third bomb, then the Super Étendard's Exocets, one and then two.
+        new[]
+        {
+            new Rung(0, "ara_a-4q", "Strike", "A-4Q Skyhawk, two 1,000 lb bombs"),
+            new Rung(1, "ara_a-4q", "StrikeHeavy", "A-4Q Skyhawk, three 1,000 lb bombs"),
+            new Rung(2, "fr_super_etendard", "AntiShip", "Super Étendard, one Exocet", Escorts.ArgentineEtendards),
+            new Rung(3, "fr_super_etendard", "AntiShipHeavy", "Super Étendard, two Exocets", Escorts.ArgentineEtendards),
+        },
+        new[]
+        {
+            new Rung(0, "ara_a-4p", "Strike", "A-4P Skyhawk, two 1,000 lb bombs"),
+            new Rung(1, "ara_a-4p", "StrikeHeavy", "A-4P Skyhawk, three 1,000 lb bombs"),
+        },
+        new[]
+        {
+            new Rung(0, "ara_dagger", "AirToAir", "Dagger, Sidewinders"),
+            new Rung(1, "fr_mirage_iii", "AirToAir", "Mirage III, an R.530 and Magics", Escorts.ArgentineMirages),
+        },
+        // Chinese: the Q-5's bombs, then the H-6D's missiles; the J-7 doubles its PL-2s.
+        new[]
+        {
+            new Rung(0, "pla_q-5a", "Strike", "Q-5, 250 kg bombs"),
+            new Rung(2, "pla_h-6d", "AntiShip", "H-6D, two YJ-6s"),
+        },
+        new[]
+        {
+            new Rung(0, "pla_j-7c", "AirToAir", "J-7, two PL-2s"),
+            new Rung(1, "pla_j-7c", "AirToAirLongRange", "J-7, four PL-2s"),
+        },
+        // Japanese: one step, from bombs to the ASM-1. The F-4EJ's other loadout only adds tanks.
+        new[]
+        {
+            new Rung(0, "jasdf_f-1", "Strike", "F-1, 750 lb bombs"),
+            new Rung(1, "jasdf_f-1", "AntiShip", "F-1, two ASM-1s"),
+        },
     };
 
     const string Foxbat = "wp_mig-25pd";
@@ -108,7 +152,7 @@ static class Refits
     /// </summary>
     internal static List<ObjectBase> Unreinforced(Run run, int ahead = 0)
     {
-        if (Standard(run, ahead) < DashStandard || !run.FlagshipType.StartsWith("wp_")) return new List<ObjectBase>();
+        if (Standard(run, ahead) < DashStandard || Navies.Of(run.FlagshipType) != Navies.Soviet) return new List<ObjectBase>();
         return run.AirWing
             .Where(w => w.Key != null && !w.Key.IsDestroyed && (w.Value & Role.AirStrike) != 0
                         && !Escorts.StandsOff(w.Key._obp._objectIniName) && !run.Reinforced.Contains(w.Key))
@@ -206,7 +250,7 @@ static class Refits
             at = Escorts.StandOffPosition(run, slot);
             altitudeFt = Mathf.Max(altitudeFt, Escorts.StandOffAltitudeFt);
         }
-        var fresh = Spawner.Aircraft(rung.Type, "Squadron1", rung.Loadout, at, altitudeFt, Spawner.TrueHeading(old), Globals._playerTaskforce);
+        var fresh = Spawner.Aircraft(rung.Type, rung.Squadron, rung.Loadout, at, altitudeFt, Spawner.TrueHeading(old), Globals._playerTaskforce);
         if (fresh == null)
         {
             broken.Add(rung);

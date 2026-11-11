@@ -27,6 +27,8 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
     public string AreaName { get; private set; }
     public string AreaBlurb { get; private set; }
     public string AreaRecord { get; private set; }
+    /// <summary>A flag for each navy; the flagships and escorts listed are the chosen one's.</summary>
+    public List<NavyTab> Navies { get; private set; }
     public List<ShipRow> Flagships { get; private set; }
     public List<ShipRow> Escorts { get; private set; }
     public string FleetSummary { get; private set; }
@@ -56,6 +58,8 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
 
     bool choosingEnsigns;
     bool placingShips;
+    /// <summary>The flagship last sailed in each navy while the game has been running, by navy id, so coming back to a navy comes back to her.</summary>
+    static readonly Dictionary<string, string> lastFlagship = new Dictionary<string, string>();
     FormationPlot plot;
 
     static Profile Profile => Profile.Current;
@@ -163,7 +167,10 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
         AreaBlurb = area.Blurb;
         AreaRecord = Record(profile.BestScore(area.Id));
 
-        Flagships = Launcher.Flagships.Select(ship => FlagshipRow(profile, ship, ship == flagship, area)).ToList();
+        var navy = SeapowerSurvivors.Navies.Of(flagship);
+        lastFlagship[navy.Id] = flagship.Type;
+        Navies = SeapowerSurvivors.Navies.All.Select(n => new NavyTab(n, n == navy, () => ChooseNavy(n))).ToList();
+        Flagships = navy.Flagships.Select(ship => FlagshipRow(profile, ship, ship == flagship, area)).ToList();
         Escorts = Store.StartingEscorts(flagship).Select(escort => EscortRow(profile, escort)).ToList();
         var hoisted = profile.HoistedEnsigns();
         FleetSummary = Summary(profile, flagship, hoisted);
@@ -189,7 +196,7 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
         foreach (var name in new[]
                  {
                      nameof(Bank), nameof(Earned), nameof(Areas), nameof(AreaName), nameof(AreaBlurb), nameof(AreaRecord),
-                     nameof(Flagships), nameof(Escorts), nameof(FleetSummary), nameof(Bonuses), nameof(RefundText),
+                     nameof(Navies), nameof(Flagships), nameof(Escorts), nameof(FleetSummary), nameof(Bonuses), nameof(RefundText),
                      nameof(EnsignSlots), nameof(EnsignSummary), nameof(EnsignBudget), nameof(EnsignPips), nameof(EnsignCards),
                  })
             Changed(name);
@@ -219,6 +226,16 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
     {
         Profile.Choose(area, flagship);
         Refresh();
+    }
+
+    /// <summary>Change navy: to its flagship last sailed, or else the first of its flagships owned. Every navy has a free one.</summary>
+    void ChooseNavy(Navy navy)
+    {
+        var profile = Profile;
+        var owned = navy.Flagships.Where(s => profile.Owns(Store.FlagshipId(s))).ToList();
+        if (owned.Count == 0) return;
+        lastFlagship.TryGetValue(navy.Id, out string last);
+        Choose(Setup.Area(profile), owned.FirstOrDefault(s => s.Type == last) ?? owned[0]);
     }
 
     ShipRow FlagshipRow(Profile profile, StartingShip ship, bool chosen, Area area)
@@ -309,6 +326,25 @@ public sealed class AreaCard
         return UnityEngine.ImageConversion.LoadImage(texture, System.IO.File.ReadAllBytes(path), markNonReadable: true)
             ? new TextureSource(texture)
             : null;
+    }
+}
+
+/// <summary>A navy to sail for: its flag, and whether it is the one chosen.</summary>
+public sealed class NavyTab
+{
+    public ImageSource Flag { get; }
+    public string Name { get; }
+    public bool Selected { get; }
+    public double FlagOpacity { get; }
+    public ICommand Command { get; }
+
+    internal NavyTab(Navy navy, bool chosen, Action choose)
+    {
+        Flag = EnsignFlags.Source(navy);
+        Name = navy.Name;
+        Selected = chosen;
+        FlagOpacity = chosen ? 1.0 : 0.6;
+        Command = new DelegateCommand(_ => choose());
     }
 }
 

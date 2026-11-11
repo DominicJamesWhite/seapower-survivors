@@ -137,6 +137,22 @@ static class Threats
         ["wp_yak-38"] = Gate.A1, ["wp_tu-16"] = Gate.A1, ["usn_a-7e"] = Gate.A1, ["ran_a-4g"] = Gate.A1, ["usmc_av-8a"] = Gate.A1,
         ["wp_su-24a"] = Gate.A2, ["wp_mig-27"] = Gate.A2, ["wp_su-24m"] = Gate.A2, ["usn_a-6e"] = Gate.A2,
         ["wp_tu-16k"] = Gate.A3, ["wp_tu-22m2"] = Gate.A3, ["usaf_b-52g"] = Gate.A3,
+
+        // Argentine: bombers first, Exocet ships by the size of their salvo, Super Étendards with the heavier aircraft.
+        ["ara_pucara"] = Gate.A1, ["ara_p-95"] = Gate.A1, ["ara_a-4p"] = Gate.A1, ["ara_a-4q"] = Gate.A1,
+        ["ara_dagger"] = Gate.A2, ["fr_super_etendard"] = Gate.A2,
+        ["ara_fs_drummond"] = Gate.M1, ["ara_dd_comodoro_py"] = Gate.M2, ["ara_dd_sumner_fram2"] = Gate.M2, ["ara_ddg_hercules"] = Gate.M3,
+        // British.
+        ["rn_frs1"] = Gate.A1, ["raf_gr3"] = Gate.A1, ["raf_vulcan"] = Gate.A2, ["rn_nimrod_mr2"] = Gate.A2,
+        ["rn_ff_leander_batch2"] = Gate.M1, ["rn_ff_amazon"] = Gate.M2, ["rn_ff_broadsword"] = Gate.M2,
+        ["rn_ddg_county_batch2_75"] = Gate.M3,
+        // Chinese.
+        ["pla_q-5a"] = Gate.A1, ["pla_h-6a"] = Gate.A1, ["pla_h-6d"] = Gate.A2,
+        ["plan_ptg_type_024"] = Gate.M1, ["plan_ff_chengdu"] = Gate.M1, ["plan_ptg_type_021"] = Gate.M2, ["plan_ff_jianghu1"] = Gate.M2,
+        ["plan_ff_jianghu3"] = Gate.M3, ["plan_dd_luda1"] = Gate.M3,
+        // Japanese: the F-1 comes with bombs first; its missile flights wait on the fleet's defence, as every missile group does.
+        ["jasdf_f-1"] = Gate.A1,
+        ["jmsdf_phm_pegasus"] = Gate.M2, ["jmsdf_dd_hatsuyuki"] = Gate.M2, ["jmsdf_dd_takatsuki_84"] = Gate.M3, ["jmsdf_ddg_tachikaze_84"] = Gate.M3,
     };
 
     internal static Gate GateOf(string type) => Gates.TryGetValue(type, out var gate) ? gate : Gate.None;
@@ -377,7 +393,67 @@ static class Threats
         return plan;
     }
 
-    /// <summary>The plan for a starting ship; one not listed, as from the test panel, gets a middling plan for its side.</summary>
-    internal static ThreatPlan For(string type) =>
-        Plans.Value.TryGetValue(type, out var plan) ? plan : Plans.Value[type.StartsWith("wp_", StringComparison.Ordinal) ? "wp_em_sovremenny" : "usn_ddg_kidd"];
+    static readonly Dictionary<string, ThreatPlan> generic = new Dictionary<string, ThreatPlan>();
+
+    /// <summary>
+    /// The plan for a starting ship. A US or Soviet one not listed, as from the
+    /// test panel, gets a middling plan for its side; a ship of any other navy
+    /// gets one built from its enemy's roster and its own class.
+    /// </summary>
+    internal static ThreatPlan For(string type)
+    {
+        if (Plans.Value.TryGetValue(type, out var plan)) return plan;
+        var navy = Navies.Of(type);
+        if (navy.Foe.Hulls == null) return Plans.Value[navy == Navies.Soviet ? "wp_em_sovremenny" : "usn_ddg_kidd"];
+        if (!generic.TryGetValue(type, out plan)) generic[type] = plan = Generic(navy.Foe, Launcher.ByType(type));
+        return plan;
+    }
+
+    /// <summary>
+    /// A plan from a roster, for the navies with no hand-set tables. The
+    /// roster's danger is what each hull costs a missile ship; a ship of
+    /// another class pays by what she can least stand, in the proportions the
+    /// hand-set plans settled on: a gun ship 2.5× for missile ships and 2× for
+    /// aircraft, a frigate 1.5× for everything, a carrier 2× for gun ships and
+    /// little for aircraft, which her own fighters meet. Gates, budget and unit
+    /// limit are those of the hand-set ship of the same class: Kidd,
+    /// Perry, Sverdlov or Kiev. A ship weak against missiles meets the last
+    /// two mini-bosses without theirs, and a carrier is given time to launch.
+    /// </summary>
+    static ThreatPlan Generic(Roster foe, StartingShip ship)
+    {
+        var shipClass = ship?.Class ?? ShipClass.Missile;
+        var (gates, budget, alive, gun, missile, air) = shipClass switch
+        {
+            ShipClass.Frigate => (PerryGates, new[] { 1f, 4f, 8f, 12f, 16f }, new[] { 2f, 4f, 7f, 10f, 12f }, 1.5f, 1.5f, 1.5f),
+            ShipClass.GunShip => (SverdlovGates, new[] { 1f, 4f, 8f, 12f, 18f }, new[] { 2f, 4f, 7f, 11f, 16f }, 1f, 2.5f, 2f),
+            ShipClass.Carrier => (KievGates, new[] { 1f, 4f, 8f, 12f, 16f }, new[] { 2f, 4f, 7f, 10f, 14f }, 2f, 1.4f, 0.6f),
+            _ => (MissileShipGates, new[] { 1f, 6f, 12f, 18f, 24f }, new[] { 3f, 6f, 11f, 16f, 20f }, 1f, 1f, 1f),
+        };
+        float Factor(string type) => GateOf(type) switch
+        {
+            Gate.None => gun,
+            Gate.A1 or Gate.A2 or Gate.A3 => air,
+            _ => missile,
+        };
+        bool light = shipClass != ShipClass.Missile;
+        var b = foe.Bosses;
+        var plan = new ThreatPlan
+        {
+            Danger = foe.Hulls.ToDictionary(h => h.type, h => Mathf.Max(1, Mathf.RoundToInt(h.danger * Factor(h.type)))),
+            Gates = gates, Budget = budget, Alive = alive, Stages = foe.Stages, Opening = foe.Opening,
+            FinaleGroups = foe.FinaleGroups, Raids = foe.Raids,
+            Bosses = new[]
+            {
+                Boss(b[0]),
+                // Bombers only once something aboard can reach them; until then the gun ships come again.
+                new BossPlan(b[1], when: r => gates[Gate.A1](r), otherwise: b[0]),
+                light ? GunsOnly(b[2]) : Boss(b[2]),
+                light ? GunsOnly(b[3]) : Boss(b[3]),
+            },
+        };
+        // Nothing more until the first kill or minute 3: a carrier's aircraft need time to launch.
+        if (ship?.Carrier == true) plan.OpeningSeconds = 180f;
+        return plan;
+    }
 }

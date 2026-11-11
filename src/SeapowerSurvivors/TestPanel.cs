@@ -210,7 +210,7 @@ public class TestPanel : MonoBehaviour
             if (GUILayout.Toggle(Mathf.Approximately(distanceNm, d), $"{d:F0} nm", "Button")) distanceNm = d;
         GUILayout.EndHorizontal();
         GUILayout.BeginHorizontal();
-        foreach (var (label, type) in ship._obp._objectIniName.StartsWith("wp_") ? NatoShips : SovietShips)
+        foreach (var (label, type) in Navies.Of(ship._obp._objectIniName) == Navies.Soviet ? NatoShips : SovietShips)
             if (GUILayout.Button(label)) Try(() => SpawnEnemy(ship, type, distanceNm));
         GUILayout.EndHorizontal();
         GUILayout.BeginHorizontal();

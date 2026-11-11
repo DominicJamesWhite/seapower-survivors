@@ -190,10 +190,49 @@ static class EnsignFlags
         },
     };
 
+    /// <summary>
+    /// The flags on the Survivors screen's navy tabs. Four are the ensigns
+    /// painted above; China's and Japan's naval ensigns are painted here.
+    /// </summary>
+    static readonly Dictionary<string, Func<float, float, Color>> NavyPainters = new Dictionary<string, Func<float, float, Color>>
+    {
+        [Navies.Us.Id] = Painters[Ensigns.HeavyGuns.Id],
+        [Navies.Soviet.Id] = Painters[Ensigns.HeavyMissiles.Id],
+        [Navies.Britain.Id] = Painters[Ensigns.LongRange.Id],
+        [Navies.Argentina.Id] = Painters[Ensigns.IronBombs.Id],
+        // Red over three blue and two white stripes, a gold star in the canton.
+        [Navies.China.Id] = (u, v) =>
+        {
+            if (v > 0.6f) return (int)((v - 0.6f) / 0.4f * 5f) % 2 == 0 ? C(0x1C3F94) : White;
+            return Star(u, v, 0.22f, 0.3f, 0.2f) ? Gold : C(0xDE2910);
+        },
+        // The rising sun, set towards the hoist, with sixteen rays.
+        [Navies.Japan.Id] = (u, v) =>
+        {
+            var red = C(0xBC002D);
+            if (Disc(u, v, 0.42f, 0.5f, 0.22f)) return red;
+            float angle = Mathf.Atan2(v - 0.5f, (u - 0.42f) * Aspect) / (2f * Mathf.PI) * 32f;
+            return Mathf.Abs(Mathf.FloorToInt(angle + 0.5f)) % 2 == 0 ? red : White;
+        },
+    };
+
+    static readonly Dictionary<string, Noesis.ImageSource> navySources = new Dictionary<string, Noesis.ImageSource>();
+
+    /// <summary>A navy's flag for the menu's views.</summary>
+    internal static Noesis.ImageSource Source(Navy navy)
+    {
+        if (navySources.TryGetValue(navy.Id, out var source)) return source;
+        return navySources[navy.Id] = new Noesis.TextureSource(Paint(NavyPainters[navy.Id], "Navy " + navy.Id));
+    }
+
     internal static Texture2D Texture(Ensign ensign)
     {
         if (built.TryGetValue(ensign, out var texture) && texture != null) return texture;
-        var paint = Painters[ensign.Id];
+        return built[ensign] = Paint(Painters[ensign.Id], "Ensign " + ensign.Id);
+    }
+
+    static Texture2D Paint(Func<float, float, Color> paint, string name)
+    {
         var pixels = new Color32[Width * Height];
         for (int y = 0; y < Height; y++)
             for (int x = 0; x < Width; x++)
@@ -213,16 +252,16 @@ static class EnsignFlags
                     ? new Color(r / alpha, g / alpha, b / alpha, alpha / (Samples * Samples))
                     : Clear;
             }
-        texture = new Texture2D(Width, Height, TextureFormat.RGBA32, true)
+        var texture = new Texture2D(Width, Height, TextureFormat.RGBA32, true)
         {
             filterMode = FilterMode.Trilinear,
             wrapMode = TextureWrapMode.Clamp,
             hideFlags = HideFlags.HideAndDontSave,
-            name = "Ensign " + ensign.Id,
+            name = name,
         };
         texture.SetPixels32(pixels);
         texture.Apply(true, false);
-        return built[ensign] = texture;
+        return texture;
     }
 
     /// <summary>The same texture for the menu's views.</summary>

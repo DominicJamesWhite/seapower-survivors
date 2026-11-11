@@ -298,11 +298,40 @@
                 </ScrollViewer>
             </Border>
 
-            <!-- Fleet: the flagship, then the starting ships and flights of its navy -->
+            <!-- Fleet: the navy, its flagships, then the starting ships and flights of that navy -->
             <Border Grid.Column="2" Style="{StaticResource Pane}">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel>
-                        <TextBlock Text="Flagship" Style="{StaticResource Heading}"/>
+                        <!-- The navies: a flag each. Choosing one changes to its flagship last sailed, and lists its ships below. -->
+                        <ItemsControl ItemsSource="{Binding Navies}" Margin="0,0,-6,8">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource Row}" Command="{Binding Command}" Margin="0,0,6,0" Height="44">
+                                        <!-- The row template centres its content, so the grid is given the button's height for the edge to run round the whole box -->
+                                        <Grid Height="44">
+                                            <Image Source="{Binding Flag}" Width="48" Height="32" Stretch="Fill" Opacity="{Binding FlagOpacity}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            <!-- A flag would hide a red fill, so the navy chosen has a red edge, as an area card does -->
+                                            <Border BorderBrush="{DynamicResource Brush.Item.BackgroundSelected}">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="BorderThickness" Value="0"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Selected}" Value="True">
+                                                                <Setter Property="BorderThickness" Value="2"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                            </Border>
+                                        </Grid>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="Flagship" Style="{StaticResource Heading}" Margin="0,6,0,4"/>
                         <Border Style="{StaticResource Rule}"/>
                         <ItemsControl ItemsSource="{Binding Flagships}" ItemTemplate="{StaticResource ShipRow}"/>
                         <Grid Margin="0,14,0,4">

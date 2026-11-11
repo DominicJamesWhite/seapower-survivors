@@ -161,12 +161,12 @@ static class Boosts
         // Air wing: bombs and rockets. Its scatter ranks are the bombs path's alone.
         float strikeDamage = Upgrades.Total(run, Upgrades.AirWing, Stat.Damage);
         float bombScatter = (Ensigns.Active(Ensigns.IronBombs) ? Ensigns.IronBombScatter : 1f) * Upgrades.Total(run, Upgrades.AirWing, Stat.Accuracy);
-        // A Kiev's Yaks on their last rung carry heavier bombs again.
-        bool heavyBombs = DeckStores.Heavy(ship);
+        // A carrier's own strike aircraft on the mod's loadouts carry bombs that hit harder, and on the last over a wider blast.
+        var (deckDamage, deckBlast) = DeckStores.Bombs(ship);
         foreach (var ap in PylonAmmo(ship).Where(StrikeStore))
         {
-            ap._warheadPower = Base(ap, "power", ap._warheadPower) * strikeDamage * (heavyBombs ? DeckStores.HeavyDamage : 1f);
-            ap._impactSizeUnity = Base(ap, "blast", ap._impactSizeUnity) * (heavyBombs ? DeckStores.HeavyBlast : 1f);
+            ap._warheadPower = Base(ap, "power", ap._warheadPower) * strikeDamage * deckDamage;
+            ap._impactSizeUnity = Base(ap, "blast", ap._impactSizeUnity) * deckBlast;
             if (ap._type == Ammunition.Type.Bomb && ap._guidanceType == AmmunitionParameters.GuidanceType.None)
                 ap._circularErrorRadius = Base(ap, "scatter", ap._circularErrorRadius) * bombScatter;
         }

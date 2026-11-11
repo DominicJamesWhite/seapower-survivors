@@ -51,6 +51,13 @@ sealed class Group
         return this;
     }
 
+    /// <summary>Aircraft in another squadron's markings than the type's first.</summary>
+    public Group From(string squadron)
+    {
+        Squadron = squadron;
+        return this;
+    }
+
     public Group Ring()
     {
         IsRing = true;
@@ -122,7 +129,9 @@ sealed class Minute
 /// <summary>
 /// The enemy's groups, and what is on the clock: spikes and set pieces. Who
 /// comes when, and at what danger, is per starting ship: see Threats. There is
-/// one list per enemy navy; the enemy is whichever side the starting ship is not.
+/// one list per enemy navy; the enemy is the one the starting ship's navy is
+/// paired with (see Navies). The Soviet and NATO lists are here; the Argentine,
+/// British, Chinese and Japanese ones are in Rosters.
 /// </summary>
 /// <remarks>
 /// Ships are not spawned on the rings given here: the director places each
@@ -176,6 +185,13 @@ static class Script
         ["knm_ptg_hauk"] = 6, ["knm_ptg_snogg"] = 4, ["fgs_ptg_tiger"] = 4, ["usn_phm_pegasus"] = 8,
         ["usn_ff_knox"] = 8, ["usn_ddg_adams_early"] = 4, ["fgs_ddg_lutjens"] = 4, ["usn_cg_belknap"] = 8,
         ["wp_rkr_slava"] = 16, ["usn_cg_ticonderoga"] = 8, ["usn_clg_oklahoma_city"] = 3, ["usn_bb_iowa"] = 16, ["usn_a-6e"] = 2, ["usaf_b-52g"] = 12,
+        // Argentine and British: four Exocets a ship, one or two an aircraft; a Nimrod's two Harpoons.
+        ["ara_fs_drummond"] = 4, ["ara_dd_sumner_fram2"] = 4, ["ara_dd_comodoro_py"] = 4, ["ara_ddg_hercules"] = 4, ["fr_super_etendard"] = 2,
+        ["rn_ff_leander_batch2"] = 4, ["rn_ff_amazon"] = 4, ["rn_ff_broadsword"] = 4, ["rn_ddg_county_batch2_75"] = 4, ["rn_nimrod_mr2"] = 2,
+        // Chinese and Japanese.
+        ["plan_ptg_type_024"] = 2, ["plan_ptg_type_021"] = 4, ["plan_ff_chengdu"] = 2, ["plan_ff_jianghu1"] = 4, ["plan_ff_jianghu3"] = 8,
+        ["plan_dd_luda1"] = 6, ["pla_h-6d"] = 2,
+        ["jmsdf_phm_pegasus"] = 8, ["jmsdf_dd_hatsuyuki"] = 8, ["jmsdf_dd_takatsuki_84"] = 8, ["jmsdf_ddg_tachikaze_84"] = 8, ["jasdf_f-1"] = 2,
     };
 
     internal static int Missiles(string type) => MissilesPerUnit.TryGetValue(type, out int n) ? n : 4;
@@ -234,14 +250,18 @@ static class Script
         ShortFiringRangeNm.TryGetValue(type, out float range) && reachNm > range + PendingMarginNm;
 
     /// <summary>The table for the navy the starting ship is fighting.</summary>
-    public static Minute[] For(SeaPower.ObjectBase playerShip) =>
-        playerShip._obp._objectIniName.StartsWith("wp_") ? NatoEnemy.Minutes : SovietEnemy.Minutes;
+    public static Minute[] For(SeaPower.ObjectBase playerShip) => Foe(playerShip).Minutes;
 
     /// <summary>Test aid: the first convoy and SAG of the navy the starting ship is fighting.</summary>
-    public static (SetPiece convoy, SetPiece sag) TestSetPieces(SeaPower.ObjectBase playerShip) =>
-        playerShip._obp._objectIniName.StartsWith("wp_")
-            ? (NatoEnemy.CoastalConvoy, NatoEnemy.BelknapSag)
-            : (SovietEnemy.CoastalConvoy, SovietEnemy.KrestaSag);
+    public static (SetPiece convoy, SetPiece sag) TestSetPieces(SeaPower.ObjectBase playerShip)
+    {
+        var foe = Foe(playerShip);
+        return (foe.TestConvoy, foe.TestSag);
+    }
+
+    /// <summary>The enemy of the run's flagship, or with no run, of this ship's navy.</summary>
+    static Roster Foe(SeaPower.ObjectBase playerShip) =>
+        Navies.Of(Run.Current?.FlagshipType ?? playerShip._obp._objectIniName).Foe;
 
     const float L = Defence.Light, M = Defence.Medium, H = Defence.Heavy;
 

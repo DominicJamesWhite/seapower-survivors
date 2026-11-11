@@ -31,11 +31,20 @@ sealed class Loadout
     }
 }
 
+/// <summary>How much a flagship can stand, for the enemy it has no hand-set plan against: see Threats.</summary>
+enum ShipClass { Missile, Frigate, GunShip, Carrier }
+
 /// <summary>A ship a run can start in.</summary>
 sealed class StartingShip
 {
     public readonly string Name, Type, Variant, Weapons, Fit;
     public readonly int Year;
+    public string NavyId = "us";
+    public ShipClass Class = ShipClass.Missile;
+    /// <summary>Its own aircraft fly from its deck: the Air wing line is theirs from the start, and the enemy gives them time to launch.</summary>
+    public bool Carrier;
+    /// <summary>The deck's strike aircraft, which the Air wing line's refit ranks load heavier (see DeckStores), and what to call them.</summary>
+    public string DeckStrike, DeckStrikeName;
 
     public StartingShip(string name, string type, string variant, int year, string weapons, string fit = null)
     {
@@ -47,8 +56,13 @@ sealed class StartingShip
         Fit = fit;
     }
 
-    /// <summary>The run fights the other navy, so a Soviet flagship faces NATO.</summary>
-    public bool Soviet => Type.StartsWith("wp_", StringComparison.Ordinal);
+    public StartingShip WithDeck(string strikeType, string strikeName)
+    {
+        Carrier = true;
+        DeckStrike = strikeType;
+        DeckStrikeName = strikeName;
+        return this;
+    }
 }
 
 /// <summary>
@@ -65,23 +79,63 @@ sealed class StartingShip
 /// </remarks>
 static class Launcher
 {
+    // Year is the service date in each hull's variants ini. Weapons are read off
+    // its ini for the fit it sails with:
+    // anti-ship, SAMs, guns, close-in, anti-submarine.
+    // Navies are named by id here, since Navies reads this list.
+    const string UsNavy = "us", SovietNavy = "ussr", BritishNavy = "uk", ArgentineNavy = "argentina", ChineseNavy = "china", JapaneseNavy = "japan";
+
+    static StartingShip In(string navy, ShipClass shipClass, StartingShip ship)
+    {
+        ship.NavyId = navy;
+        ship.Class = shipClass;
+        return ship;
+    }
+
     internal static readonly StartingShip[] Flagships =
     {
-        // Year is the service date in each hull's variants ini. Weapons are read off
-        // its ini for the fit it sails with:
-        // anti-ship, SAMs, guns, close-in, anti-submarine.
-        new StartingShip("Sverdlov", "wp_kr_sverdlov", "Variant1", 1952, "152 mm · 100 mm · AK-230"),
-        new StartingShip("Oliver Hazard Perry", "usn_ffg_oliver_hazard_perry", "Variant1", 1977, "Harpoon · SM-1MR · 76 mm · Phalanx · Mk-46"),
-        new StartingShip("Kidd", "usn_ddg_kidd", "Variant3", 1981, "Harpoon · SM-1MR · 127 mm · Phalanx · ASROC · Mk-46"),
-        new StartingShip("Sovremenny", "wp_em_sovremenny", "Variant1", 1980, "SS-N-22 · SA-N-12 · 130 mm · AK-630 · SS-N-16 · RBU-1000", "Late"),
-        new StartingShip("Long Beach", "usn_cgn_long_beach_83", "Variant1", 1983, "Tomahawk · Harpoon · SM-2ER · 127 mm · Phalanx · ASROC · Mk-46"),
-        new StartingShip("Slava", "wp_rkr_slava", "Variant1", 1982, "SS-N-12 · SA-N-6 · SA-N-4 · 130 mm · AK-630 · RBU-6000 · SET-65"),
-        new StartingShip("Iowa", "usn_bb_iowa", "Variant1", 1984, "Tomahawk · Harpoon · 406 mm · 127 mm · Phalanx"),
-        new StartingShip("Bunker Hill", "usn_cg_bunker_hill", "Variant1", 1986, "Tomahawk · Harpoon · SM-2MR · 127 mm · Phalanx · VL-ASROC · Mk-46", "Late"),
-        new StartingShip("Kirov", "wp_rkr_kirov", "Variant1", 1980, "SS-N-19 · SA-N-6 · SA-N-4 · 100 mm · AK-630 · SS-N-14 · RBU-6000 · RBU-1000 · SET-65"),
-        // Its air group comes from its own ini; the player launches it.
-        new StartingShip("Kiev", "wp_takr_kiev", "Variant1", 1975, "SS-N-12 · SA-N-3 · SA-N-4 · 76 mm · AK-630 · RBU-6000 · SET-65"),
+        In(UsNavy, ShipClass.Frigate, new StartingShip("Oliver Hazard Perry", "usn_ffg_oliver_hazard_perry", "Variant1", 1977, "Harpoon · SM-1MR · 76 mm · Phalanx · Mk-46")),
+        In(UsNavy, ShipClass.Missile, new StartingShip("Kidd", "usn_ddg_kidd", "Variant3", 1981, "Harpoon · SM-1MR · 127 mm · Phalanx · ASROC · Mk-46")),
+        In(UsNavy, ShipClass.Missile, new StartingShip("Long Beach", "usn_cgn_long_beach_83", "Variant1", 1983, "Tomahawk · Harpoon · SM-2ER · 127 mm · Phalanx · ASROC · Mk-46")),
+        In(UsNavy, ShipClass.GunShip, new StartingShip("Iowa", "usn_bb_iowa", "Variant1", 1984, "Tomahawk · Harpoon · 406 mm · 127 mm · Phalanx")),
+        In(UsNavy, ShipClass.Missile, new StartingShip("Bunker Hill", "usn_cg_bunker_hill", "Variant1", 1986, "Tomahawk · Harpoon · SM-2MR · 127 mm · Phalanx · VL-ASROC · Mk-46", "Late")),
+
+        In(SovietNavy, ShipClass.GunShip, new StartingShip("Sverdlov", "wp_kr_sverdlov", "Variant1", 1952, "152 mm · 100 mm · AK-230")),
+        In(SovietNavy, ShipClass.Missile, new StartingShip("Sovremenny", "wp_em_sovremenny", "Variant1", 1980, "SS-N-22 · SA-N-12 · 130 mm · AK-630 · SS-N-16 · RBU-1000", "Late")),
+        In(SovietNavy, ShipClass.Missile, new StartingShip("Slava", "wp_rkr_slava", "Variant1", 1982, "SS-N-12 · SA-N-6 · SA-N-4 · 130 mm · AK-630 · RBU-6000 · SET-65")),
+        In(SovietNavy, ShipClass.Missile, new StartingShip("Kirov", "wp_rkr_kirov", "Variant1", 1980, "SS-N-19 · SA-N-6 · SA-N-4 · 100 mm · AK-630 · SS-N-14 · RBU-6000 · RBU-1000 · SET-65")),
+        // A carrier's air group comes from its own ini; the player launches it.
+        In(SovietNavy, ShipClass.Carrier, new StartingShip("Kiev", "wp_takr_kiev", "Variant1", 1975, "SS-N-12 · SA-N-3 · SA-N-4 · 76 mm · AK-630 · RBU-6000 · SET-65")
+            .WithDeck("wp_yak-38", "anti-ship Yak-38s")),
+
+        In(BritishNavy, ShipClass.Frigate, new StartingShip("Amazon", "rn_ff_amazon", "Variant1", 1974, "Exocet · Seacat · 114 mm · 20 mm · Mk-44")),
+        In(BritishNavy, ShipClass.Missile, new StartingShip("Sheffield", "rn_ddg_sheffield", "Variant1", 1976, "Sea Dart · 114 mm · 20 mm · Mk-44")),
+        In(BritishNavy, ShipClass.Missile, new StartingShip("County", "rn_ddg_county_batch2_75", "Variant1", 1974, "Exocet · Seaslug · Seacat · 114 mm · 20 mm")),
+        In(BritishNavy, ShipClass.Missile, new StartingShip("Bristol", "rn_ddg_bristol", "Variant1", 1979, "Sea Dart · 114 mm · 20 mm · Ikara")),
+        In(BritishNavy, ShipClass.Carrier, new StartingShip("Invincible", "rn_cvs_invincible", "Variant1", 1976, "Sea Dart · 8 Sea Harrier FRS.1 · 12 Sea King")
+            .WithDeck("rn_frs1", "Sea Harriers on Strike")),
+        // The game's Centaur-class carrier is Hermes as she sailed in 1982.
+        In(BritishNavy, ShipClass.Carrier, new StartingShip("Hermes", "rn_cv_centaur", "Variant1", 1973, "Seacat · 12 Sea Harrier FRS.1 · 9 Sea King")
+            .WithDeck("rn_frs1", "Sea Harriers on Strike")),
+
+        In(ArgentineNavy, ShipClass.GunShip, new StartingShip("Drummond", "ara_fs_drummond", "Variant1", 1978, "Exocet · 100 mm · 40 mm · Mk-44")),
+        In(ArgentineNavy, ShipClass.Missile, new StartingShip("Hércules", "ara_ddg_hercules", "Variant1", 1976, "Exocet · Sea Dart · 114 mm · 20 mm · A-244")),
+        In(ArgentineNavy, ShipClass.GunShip, new StartingShip("General Belgrano", "ara_cl_belgrano", "Variant1", 1951, "Seacat · 152 mm · 127 mm · 40 mm")),
+        // No missiles and only 40 mm guns of her own, so she is faced as a gun ship is.
+        In(ArgentineNavy, ShipClass.GunShip, new StartingShip("Veinticinco de Mayo", "ara_cv_veinticinco_de_mayo", "Variant1", 1969, "40 mm · 8 A-4Q Skyhawk · 4 S-2E Tracker")
+            .WithDeck("ara_a-4q", "A-4Q Skyhawks on Strike")),
+
+        In(ChineseNavy, ShipClass.GunShip, new StartingShip("Jianghu I", "plan_ff_jianghu1", "Variant1", 1975, "HY-1 · 100 mm · 37 mm")),
+        In(ChineseNavy, ShipClass.Frigate, new StartingShip("Jiangdong", "plan_ffg_jiangdong", "Variant1", 1975, "HQ-61 · 100 mm · 37 mm")),
+        In(ChineseNavy, ShipClass.GunShip, new StartingShip("Jianghu III", "plan_ff_jianghu3", "Variant1", 1986, "YJ-8 · 100 mm · 37 mm")),
+        In(ChineseNavy, ShipClass.GunShip, new StartingShip("Luda", "plan_dd_luda1", "Variant1", 1974, "HY-1 · 130 mm · 37 mm · 25 mm")),
+
+        In(JapaneseNavy, ShipClass.GunShip, new StartingShip("Takatsuki", "jmsdf_dd_takatsuki", "Variant1", 1967, "127 mm · ASROC · 375 mm rockets · Mk-46")),
+        In(JapaneseNavy, ShipClass.Frigate, new StartingShip("Hatsuyuki", "jmsdf_dd_hatsuyuki", "Variant1", 1982, "Harpoon · Sea Sparrow · 76 mm · Phalanx · ASROC · Mk-46")),
+        In(JapaneseNavy, ShipClass.Missile, new StartingShip("Tachikaze", "jmsdf_ddg_tachikaze_84", "Variant1", 1984, "Harpoon · SM-1MR · 127 mm · Phalanx · ASROC · Mk-46")),
     };
+
+    internal static StartingShip ByType(string type) => Flagships.FirstOrDefault(s => s.Type == type);
 
     /// <summary>The weapon fit our ships of this type use, whichever way they join; null for the game's default.</summary>
     internal static string FitOf(string type) => Flagships.FirstOrDefault(s => s.Type == type)?.Fit;
@@ -148,7 +202,7 @@ static class Launcher
     static string Mission(Loadout loadout)
     {
         string flagship = loadout.Flagship.Name;
-        string enemy = loadout.Flagship.Soviet ? "NATO" : "Soviet";
+        string enemy = Navies.Of(loadout.Flagship).FoeName;
         var area = loadout.Area;
         var start = area.PlayerStart;
         float heading = start.HeadingToPosition(area.EnemyWaters);

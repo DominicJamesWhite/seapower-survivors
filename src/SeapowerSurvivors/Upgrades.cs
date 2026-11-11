@@ -456,11 +456,11 @@ static class Upgrades
     /// starting flights on a ladder (see <see cref="Refits"/>): strike from
     /// unguided bombs to Harpoons, the last bringing a Soviet wing a Backfire
     /// for each strike aircraft instead, fighters from Phantoms to Phoenix
-    /// Tomcats or MiG-23s to MiG-25s. A Kiev's own aircraft are not refitted
+    /// Tomcats or MiG-23s to MiG-25s, and each other navy as Navies says. A carrier's own aircraft are not refitted
     /// but loaded heavier on the same ranks (see <see cref="DeckStores"/>),
     /// and under the Argentine and Dutch ensigns, whose flights carry only
     /// bombs, no flight is. Offered with any flight in the fleet, and with a
-    /// Kiev from the start, since her aircraft are not built until they launch.
+    /// carrier from the start, since her aircraft are not built until they launch.
     /// </summary>
     public static readonly Upgrade AirWing = MakeAirWing();
 
@@ -478,18 +478,20 @@ static class Upgrades
         var stealthy = Step.Blend(r,
             new Step(Stat.Rcs, 0.8409f, "Aircraft radar signature ÷{0}"),
             Step.Chance(Stat.Spoof, 0.25f, 0.6f, "Aircraft chaff spoof chance +{0} points"));
-        var resupply = new Step(Stat.Resupply, 1f, "Aircraft in the air rearm every 4 minutes, not only at level-ups, and a Kiev's own refuel too", "Air resupply");
+        var resupply = new Step(Stat.Resupply, 1f, "Aircraft in the air rearm every 4 minutes, not only at level-ups, and a carrier's own refuel too", "Air resupply");
 
-        // An airframe rank that also refits the flights a refit reaches, and
-        // loads a Kiev's own anti-ship Yak-38s heavier (see DeckStores).
-        Step Stage(Step airframe, string refit, string refitName, string deck)
+        // An airframe rank that also refits the flights a refit reaches, as
+        // their navy does it (see Navies), and loads a carrier's own strike
+        // aircraft heavier (see DeckStores).
+        Step Stage(Step airframe, int refit, string refitName)
         {
-            var step = Step.Blend(new Step(Stat.Refit, 1f, refit, refitName), airframe);
+            var step = Step.Blend(new Step(Stat.Refit, 1f, "Flights refit with better weapons or aircraft", refitName), airframe);
             return step.Reading(() =>
             {
                 string text = airframe.Text, name = airframe.Name;
-                if (RefitsAllowed) { text += $". Flights refit: {refit}"; name = refitName; }
-                if (Escorts.KievRun(Run.Current)) text += $". The Kiev's anti-ship Yak-38s carry {deck}";
+                var run = Run.Current;
+                if (RefitsAllowed) { text += $". Flights refit: {Navies.Of(run?.FlagshipType).Refits[refit]}"; name = refitName; }
+                if (DeckStores.Reading(run, refit + 1) is string deck) text += $". {deck}";
                 return (name, text);
             });
         }
@@ -500,22 +502,16 @@ static class Upgrades
             Systems = s => Run.Current != null && (Run.Current.AirWing.ContainsKey(s) || Escorts.FromDeck(Run.Current, s))
                 ? Boosts.Hardpoints(s, _ => true) : Enumerable.Empty<WeaponSystemHardpoint>(),
             // Its aircraft are not built until they launch, so the deck itself is enough.
-            Carries = Escorts.IsKiev,
+            Carries = Escorts.IsCarrier,
             Path = new[]
             {
                 firepower, firepower, firepower, firepower,
-                Stage(new Step(Stat.Speed, 1.25f, "Aircraft fly 1.25× as fast", "Uprated engines"),
-                      "A-7Es stay, with Walleye guided bombs; Yak-38s become Su-24As with AS-14s; F-4Js become F-14As; MiG-23MSs become MiG-23MLDs", "Guided weapons refit",
-                      "two S-25 rockets inboard of their two FAB-500s"),
+                Stage(new Step(Stat.Speed, 1.25f, "Aircraft fly 1.25× as fast", "Uprated engines"), 0, "Guided weapons refit"),
                 firepower, firepower, firepower, firepower, resupply,
                 agile, agile, agile, agile,
-                Stage(new Step(Stat.Rcs, 0.5f, "Aircraft have half the radar signature", "Radar-absorbent paint"),
-                      "A-7Es become A-6Es with two Harpoons; Su-24As become Su-24Ms with AS-14s and KAB-500Ls; F-14As carry a Phoenix; MiG-23MLDs become MiG-25PDs", "New aircraft refit",
-                      "four FAB-500s"),
+                Stage(new Step(Stat.Rcs, 0.5f, "Aircraft have half the radar signature", "Radar-absorbent paint"), 1, "New aircraft refit"),
                 stealthy, stealthy, stealthy, stealthy,
-                Stage(new Step(Stat.Speed, 1.2f, "Aircraft fly 1.2× as fast again", "Stripped airframe"),
-                      "A-6Es and Hornets carry four Harpoons; F-14As carry four Phoenix; a Tu-22M2 with three AS-4s joins for each Soviet strike aircraft; MiG-25PDs fly 1.4× as fast and turn 1.5× as hard", "Heavy loadout refit",
-                      "four FAB-500s that hit 1.8× as hard over twice the blast radius"),
+                Stage(new Step(Stat.Speed, 1.2f, "Aircraft fly 1.2× as fast again", "Stripped airframe"), 2, "Heavy loadout refit"),
             },
         };
     }
