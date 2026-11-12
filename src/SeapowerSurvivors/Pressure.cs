@@ -18,7 +18,10 @@ namespace SeapowerSurvivors;
 ///
 /// - The salvo limit stays under the fleet's score (at most 90%), so a stronger
 ///   fleet meets larger salvos but keeps a margin for leaks. The final assault
-///   is the exception: see Finale.
+///   is the exception: see Finale. So are the harder difficulties, which raise
+///   the share past the score, the climb and the most missiles at once, drop
+///   the breather, and cut what follows by their Mercy, to nothing at the top:
+///   see Difficulty.
 /// - Pressure climbs only while no enemy missile has come near the fleet, and
 ///   a close call knocks it back before anything has been hit.
 /// - A hit a ship survives, or a ship lost, knocks it back further. If the
@@ -32,8 +35,6 @@ namespace SeapowerSurvivors;
 sealed class Pressure
 {
     const float Start = 0.3f;
-    /// <summary>Game seconds for pressure to climb from nothing to full.</summary>
-    const float ClimbSeconds = 120f;
     /// <summary>Game seconds after a close call or hit before pressure climbs again.</summary>
     const float QuietSeconds = 30f;
     /// <summary>An enemy anti-ship missile this close to a fleet ship has got through the outer defences.</summary>
@@ -41,7 +42,7 @@ sealed class Pressure
     const float CloseCallPenalty = 0.15f, HitPenalty = 0.4f;
     /// <summary>Warnings this close together count as one salvo, for the penalty.</summary>
     const float SalvoSeconds = 8f;
-    const float BreatherSeconds = 45f, BreatherCooldownSeconds = 90f;
+    const float BreatherCooldownSeconds = 90f;
     /// <summary>A drop in health smaller than this is not a hit.</summary>
     const float HitPoints = 0.5f;
     const float LogSeconds = 30f;
@@ -50,11 +51,11 @@ sealed class Pressure
     const float EasyShareStart = 0.35f, EasyShareEnd = 0.45f;
     /// <summary>The same at full pressure. Below 1: one leak can end the run.</summary>
     const float HardShareStart = 0.65f, HardShareEnd = 0.9f;
-    /// <summary>Most enemy missiles allowed at once, whatever the fleet: more than this costs too many frames.</summary>
-    const float MaxSalvo = 24f;
     /// <summary>The final assault's share and limit, over the fleet's score: only a strong build holds this.</summary>
     const float FinaleShare = 1.4f, FinaleMaxSalvo = 48f;
 
+    /// <summary>The run's difficulty: how fast pressure climbs, how long a breather is, and how far the salvo limit goes.</summary>
+    Difficulty level = Difficulty.All[0];
     float value = Start;
     double lastTick, lastWarning = double.MinValue, breatherUntil = double.MinValue, nextBreather = double.MinValue, nextLog;
     int closeCalls, hits;
@@ -70,8 +71,9 @@ sealed class Pressure
     /// <summary>A close call or hit was recent: the fleet is not on top of things, so the ramp does not climb.</summary>
     internal bool Warned => Now - lastWarning < QuietSeconds;
 
-    internal void Reset()
+    internal void Reset(Difficulty difficulty = null)
     {
+        level = difficulty ?? Difficulty.All[0];
         value = Start;
         Finale = false;
         lastTick = nextLog = Now;
@@ -87,23 +89,25 @@ sealed class Pressure
     internal float Share(float elapsedSeconds)
     {
         float t = Mathf.Clamp01(elapsedSeconds / Script.RunSeconds);
-        return Mathf.Lerp(Mathf.Lerp(EasyShareStart, EasyShareEnd, t), Mathf.Lerp(HardShareStart, HardShareEnd, t), value);
+        return Mathf.Lerp(Mathf.Lerp(EasyShareStart, EasyShareEnd, t), Mathf.Lerp(HardShareStart, HardShareEnd, t), value) * level.SalvoShare;
     }
 
     /// <summary>Enemy missiles allowed in the air and on the rails at once.</summary>
     internal float SalvoLimit(float defence, float elapsedSeconds) =>
-        Finale ? Mathf.Min(defence * FinaleShare, FinaleMaxSalvo) : Mathf.Min(defence * Share(elapsedSeconds), MaxSalvo);
+        // The final assault is never gentler than the run before it.
+        Finale ? Mathf.Min(defence * Mathf.Max(FinaleShare, Share(elapsedSeconds)), Mathf.Max(FinaleMaxSalvo, level.MaxSalvo))
+               : Mathf.Min(defence * Share(elapsedSeconds), level.MaxSalvo);
 
     void Warn(float penalty)
     {
-        if (Now - lastWarning >= SalvoSeconds) value = Mathf.Max(0f, value - penalty);
+        if (Now - lastWarning >= SalvoSeconds) value = Mathf.Max(0f, value - penalty * level.Mercy);
         lastWarning = Now;
     }
 
     void StartBreather(string why)
     {
-        if (Finale || Now < nextBreather) return;
-        breatherUntil = Now + BreatherSeconds;
+        if (Finale || level.BreatherSeconds <= 0f || Now < nextBreather) return;
+        breatherUntil = Now + level.BreatherSeconds;
         nextBreather = breatherUntil + BreatherCooldownSeconds;
         value = 0f;
         TestPanel.Report($"Enemy regrouping: {why}");
@@ -124,7 +128,7 @@ sealed class Pressure
             if (Now - lastWarning >= SalvoSeconds)
             {
                 closeCalls++;
-                Entry.Log.LogInfo($"Close call: enemy missile {closest:F1} nm from the fleet, pressure {Mathf.Max(0f, value - CloseCallPenalty):F2}");
+                Entry.Log.LogInfo($"Close call: enemy missile {closest:F1} nm from the fleet, pressure {Mathf.Max(0f, value - CloseCallPenalty * level.Mercy):F2}");
             }
             Warn(CloseCallPenalty);
         }
@@ -151,9 +155,9 @@ sealed class Pressure
         }
 
         if (Now - lastWarning >= QuietSeconds)
-            value = Mathf.Min(1f, value + seconds / ClimbSeconds);
+            value = Mathf.Min(1f, value + seconds / level.ClimbSeconds);
         // A wounded flagship stays wounded, so pressure stays down with it: another hit could end the run.
-        if (run.Ship != null) value = Mathf.Min(value, Health(run.Ship) / 100f);
+        if (run.Ship != null) value = Mathf.Min(value, Mathf.Lerp(1f, Health(run.Ship) / 100f, level.Mercy));
         if (Finale) value = 1f;
 
         if (Now >= nextLog)

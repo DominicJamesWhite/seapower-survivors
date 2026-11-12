@@ -39,6 +39,8 @@ public class Director : MonoBehaviour
 
     internal static Director Instance;
     internal float ThreatMultiplier = 1f;
+    /// <summary>What a wave's budget is multiplied by: the test panel's multiplier and the difficulty's.</summary>
+    float BudgetFactor => ThreatMultiplier * (Run.Current?.Difficulty.Budget ?? 1f);
     /// <summary>How many times the usual number of missiles the enemy will have in the air at one ship before it holds fire. Above 1 only late in a run: see CombatHooks.EnemyKeepsFiring.</summary>
     internal float EnemySaturation = 1f;
 
@@ -62,8 +64,6 @@ public class Director : MonoBehaviour
     const float PulseSeconds = 45f;
     /// <summary>Each pulse's share of the budget through one build-up: the last is the peak.</summary>
     static readonly float[] PulseShare = { 0.75f, 1f, 1.25f, 1.5f };
-    /// <summary>Most groups in one pulse, on bearings well apart.</summary>
-    const int MaxGroupsPerPulse = 4;
     /// <summary>After a peak, the fight is given this long to play out before the relax starts, if it does not thin out first.</summary>
     const float PeakFadeSeconds = 45f;
     const float RelaxMinSeconds = 30f, RelaxMaxSeconds = 45f;
@@ -88,6 +88,12 @@ public class Director : MonoBehaviour
     readonly List<ObjectBase> openingUnits = new List<ObjectBase>();
     bool finaleStarted;
     int raidsSent;
+    /// <summary>Enemy missile ships with no anti-ship missile left, and since when: on the harder difficulties they are rearmed after a while.</summary>
+    readonly Dictionary<ObjectBase, double> spentSince = new Dictionary<ObjectBase, double>();
+    /// <summary>Gates one step easier: in the final assault for everyone, and all run at the top difficulty.</summary>
+    /// <summary>The lowest the curve may fall: not at all where the difficulty has no mercy.</summary>
+    float AdjustFloor => Mathf.Lerp(1f, AdjustMin, Run.Current?.Difficulty.Mercy ?? 1f);
+    bool Eased => InFinale || Run.Current?.Difficulty.EasedGates == true;
     /// <summary>Stand-off aircraft: told where the fleet is on each alert, for without it they may never fire from that far out.</summary>
     readonly HashSet<ObjectBase> raiders = new HashSet<ObjectBase>();
     /// <summary>The last stretch of the run: no relaxing, no breathers, everything the enemy has left. See <see cref="FinalAssault"/>.</summary>
@@ -157,14 +163,16 @@ public class Director : MonoBehaviour
         raidsSent = 0;
         raiders.Clear();
         openingUnits.Clear();
-        pressure.Reset();
+        spentSince.Clear();
+        pressure.Reset(Run.Current.Difficulty);
+        Run.Current.Difficulty.Apply();
         lastEdgeNm = 0f;
         if (Run.Current.Hoisted.Count > 0)
         {
             Boosts.ApplyFleet(Run.Current);
             TestPanel.Report($"Flying: {string.Join(", ", Run.Current.Hoisted.Select(e => e.Name))}");
         }
-        TestPanel.Report("Run started");
+        TestPanel.Report($"Run started as {Ranks.Of(Run.Current.Difficulty, Navies.Of(Run.Current.FlagshipType)).Name}: score ×{Run.Current.Difficulty.ScoreFactor}");
     }
 
     /// <summary>
@@ -224,6 +232,7 @@ public class Director : MonoBehaviour
                 Flagship = run.FlagshipType,
                 Escorts = run.StartingEscorts,
                 Ensigns = run.Hoisted.Select(e => e.Name).ToList(),
+                Difficulty = run.Difficulty.Index,
             });
             TestPanel.Report($"Score: {run.FinalScore:N0}{(best ? ", a new high score here" : "")}");
         }
@@ -234,6 +243,7 @@ public class Director : MonoBehaviour
         Bank(Run.Current);
         // Countermeasures loosens the game's decoy pity rule; put it back.
         Globals._playerMissilesSpoofedLimit = 3;
+        Difficulty.Restore();
         phase = Phase.Idle;
         minuteStarted = -1;
         spawned.Clear();
@@ -242,6 +252,7 @@ public class Director : MonoBehaviour
         standOff.Clear();
         disarmed.Clear();
         raiders.Clear();
+        spentSince.Clear();
         EnemySaturation = 1f;
         DamageLog.Finish();
         Run.Current = null;
@@ -382,8 +393,10 @@ public class Director : MonoBehaviour
         run.Elapsed = Elapsed;
         var table = Script.For(run.Ship);
         float defence = Defence.Score(run);
+        run.Difficulty.Apply();
         KeepDisarmed();
         var afloat = spawned.Select(s => s.unit).Concat(setPieces.Afloat).Distinct().ToList();
+        ReloadEnemies(afloat, run);
         committed = CombatHooks.IncomingAntiShip() + afloat.Where(u => !OutOfFiringRange(u, run)).Sum(MissilesCommitted);
         pendingMissiles = afloat.Where(u => OutOfFiringRange(u, run)).Sum(MissilesCommitted);
         CombatHooks.LogEnemyLaunches(player);
@@ -397,10 +410,10 @@ public class Director : MonoBehaviour
             TestPanel.Report("Final assault: the enemy is throwing in everything it has left");
         }
         EnemySaturation = finale ? float.PositiveInfinity
-            : Mathf.Lerp(1f, Script.SaturationLate, Mathf.InverseLerp(Script.SaturationFromSeconds, Script.RunSeconds - Script.FinaleSeconds, Elapsed));
+            : Mathf.Lerp(1f, Script.SaturationLate, Mathf.InverseLerp(run.Difficulty.SaturationFromSeconds, Script.RunSeconds - Script.FinaleSeconds, Elapsed));
         pressure.Tick(run, Elapsed, defence, committed, pendingMissiles, closestEnemy, finale);
         // An open gate promises the fleet can face those missiles, so the score alone cannot shut them out, but pressure can still cut them back.
-        salvoLimit = Mathf.Max(pressure.SalvoLimit(defence, Elapsed), plan.SalvoFloor(run, finale) * Mathf.Lerp(0.5f, 1f, pressure.Value * 2f));
+        salvoLimit = Mathf.Max(pressure.SalvoLimit(defence, Elapsed), plan.SalvoFloor(run, Eased) * Mathf.Lerp(0.5f, 1f, pressure.Value * 2f));
         int minuteIndex = Mathf.Min((int)(Elapsed / Script.PhaseSeconds), table.Length - 1);
         var minute = table[minuteIndex];
         if (minuteIndex != minuteStarted)
@@ -454,7 +467,7 @@ public class Director : MonoBehaviour
     {
         if (Now < nextPulse || SecondsLeft < Script.FinaleLastSpawnSeconds) return;
         nextPulse = Now + Script.FinalePulseSeconds;
-        float budget = plan.BudgetAt(Script.RunSeconds) * Script.FinaleBudgetShare * ThreatMultiplier;
+        float budget = plan.BudgetAt(Script.RunSeconds) * Script.FinaleBudgetShare * BudgetFactor;
         float cap = budget * WalletPulses;
         wallet = Mathf.Min(wallet + budget, cap);
         var bought = Buy(plan.FinaleMenu, cap, player, run);
@@ -466,7 +479,7 @@ public class Director : MonoBehaviour
     {
         var bought = new List<string>();
         var bearings = new List<float>();
-        for (int i = 0; i < MaxGroupsPerPulse; i++)
+        for (int i = 0; i < run.Difficulty.Groups; i++)
         {
             int room = Room;
             var menu = source.Where(g => g.Units.Length <= room && plan.Cost(g) <= cap && MayCome(g, run)).ToList();
@@ -498,7 +511,7 @@ public class Director : MonoBehaviour
         }
         if (pressure.Breather)
         {
-            if (!breatherTaken) adjust = Mathf.Clamp(adjust - BreatherAdjust, AdjustMin, AdjustMax);
+            if (!breatherTaken) adjust = Mathf.Clamp(adjust - BreatherAdjust, AdjustFloor, AdjustMax);
             breatherTaken = true;
             return;
         }
@@ -522,7 +535,7 @@ public class Director : MonoBehaviour
         {
             if (Now < peakFadeUntil && spawned.Count > peakUnits / 2f) return;
             peakFadeUntil = 0.0;
-            relaxUntil = Now + UnityEngine.Random.Range(RelaxMinSeconds, RelaxMaxSeconds);
+            relaxUntil = Now + UnityEngine.Random.Range(RelaxMinSeconds, RelaxMaxSeconds) * run.Difficulty.Mercy;
             nextPulse = relaxUntil;
             Entry.Log.LogInfo($"Relax at {Clock(Elapsed)}, {spawned.Count} enemies out");
         }
@@ -537,16 +550,16 @@ public class Director : MonoBehaviour
         if (lastPulseBudget > 0f)
         {
             float change = AdjustRate * (Mathf.Min(killedDanger / lastPulseBudget, 2f) - KeepingUpShare);
-            if (change < 0f || !pressure.Warned) adjust = Mathf.Clamp(adjust + change, AdjustMin, AdjustMax);
+            if (change < 0f || !pressure.Warned) adjust = Mathf.Clamp(adjust + change, AdjustFloor, AdjustMax);
         }
         killedDanger = 0f;
 
-        float budget = plan.BudgetAt(Elapsed) * adjust * ThreatMultiplier;
+        float budget = plan.BudgetAt(Elapsed) * adjust * BudgetFactor;
         lastPulseBudget = budget;
         float cap = budget * WalletPulses;
         wallet = Mathf.Min(wallet + budget * PulseShare[pulseInCycle], cap);
 
-        var bought = Buy(plan.StageAt(Elapsed), cap, player, run);
+        var bought = Buy(plan.StageAt(Elapsed + run.Difficulty.StageShiftSeconds), cap, player, run);
         if (bought.Count > 0)
             Entry.Log.LogInfo($"Wave at {Clock(Elapsed)}: {string.Join(", ", bought)}; {wallet:F0} credits left, budget {budget:F1}, adjust {adjust:F2}, {spawned.Count} of {Limit:F0} out, missiles {committed} of {salvoLimit:F1}");
         else
@@ -575,16 +588,16 @@ public class Director : MonoBehaviour
     bool MayCome(Group group, Run run)
     {
         bool finale = InFinale;
-        if (!plan.Allows(group.Units, run, finale)) return false;
+        if (!plan.Allows(group.Units, run, Eased)) return false;
         if (group.Salvo > 0 && (pressure.Breather || committed + group.SalvoAt(lastEdgeNm) > salvoLimit)) return false;
         // In the final assault boats that fire only from close in are placed there, so there is nothing to wait for.
         if (!finale && group.Waits && spawned.Count(s => Script.IsWaiting(s.unit._obp._objectIniName)) + group.Units.Length > Mathf.Max(MinWaiting, Limit / 3f)) return false;
-        if (group.Domain == Domain.Air && !plan.Open(Gate.A2, run, finale) && spawned.Count(s => s.unit.IsAirUnit) + group.Units.Length > (finale ? 2 * BomberPair : BomberPair)) return false;
+        if (group.Domain == Domain.Air && !plan.Open(Gate.A2, run, Eased) && spawned.Count(s => s.unit.IsAirUnit) + group.Units.Length > (finale ? 2 * BomberPair : BomberPair)) return false;
         return true;
     }
 
     bool EventFits(Group group, Run run) =>
-        group.Units.Length <= Room && plan.Cost(group) <= plan.BudgetAt(Elapsed) * adjust * ThreatMultiplier * WalletPulses && MayCome(group, run);
+        group.Units.Length <= Room && plan.Cost(group) <= plan.BudgetAt(Elapsed) * adjust * BudgetFactor * WalletPulses && MayCome(group, run);
 
     /// <summary>Mini-bosses stay on the clock, whatever the ramp is doing, in the form this ship can face.</summary>
     void SendBoss(int minuteIndex, ObjectBase player, Run run)
@@ -596,7 +609,7 @@ public class Director : MonoBehaviour
         var boss = choice.Pick(run);
         // Decided first: one without missiles comes in as a gun ship, not out at missile range.
         bool armed = boss.Salvo == 0 || boss.Domain == Domain.Air || (!choice.GunsOnly && !pressure.Breather &&
-                                         plan.MissilesAllowed(boss.Units, run, InFinale) && committed + boss.SalvoAt(lastEdgeNm) <= salvoLimit);
+                                         plan.MissilesAllowed(boss.Units, run, Eased) && committed + boss.SalvoAt(lastEdgeNm) <= salvoLimit);
         var units = Send(boss, player, $"Mini-boss: {boss.Name}", armed: armed);
         if (armed) committed += boss.SalvoAt(lastEdgeNm);
         else TestPanel.Report($"{boss.Name} comes guns only");
@@ -609,6 +622,9 @@ public class Director : MonoBehaviour
         get
         {
             float alive = plan.AliveAt(Elapsed) * ThreatMultiplier;
+            // The difficulty's extra units stop where the final assault's do: beyond that the frame rate goes.
+            float more = Run.Current?.Difficulty.Units ?? 1f;
+            if (more > 1f) alive = Mathf.Max(alive, Mathf.Min(alive * more, Script.FinaleMaxAlive));
             if (InFinale) alive = Mathf.Max(alive, Mathf.Min(alive * Script.FinaleAliveFactor, Script.FinaleMaxAlive));
             return Mathf.Max(1f, alive);
         }
@@ -658,6 +674,37 @@ public class Director : MonoBehaviour
                 launcher.Inoperable.Value = true;
     }
 
+    /// <summary>
+    /// On the harder difficulties a missile ship that has fired its last
+    /// anti-ship missile is rearmed after a while, by the game's own rearm, so
+    /// it stays a danger. What it reloads counts against the salvo limit like
+    /// any other missile on the rails. A ship held to guns only stays so, and
+    /// aircraft are left alone: they are retired soon after they fire.
+    /// </summary>
+    void ReloadEnemies(List<ObjectBase> afloat, Run run)
+    {
+        float after = run.Difficulty.ReloadSeconds;
+        if (after <= 0f) return;
+        foreach (var gone in spentSince.Keys.Where(u => u == null || u.IsDestroyed).ToList()) spentSince.Remove(gone);
+        foreach (var unit in afloat)
+        {
+            if (unit == null || unit.IsDestroyed || unit.IsAirUnit || disarmed.Contains(unit)) continue;
+            if (Script.MissilesIfListed(unit._obp._objectIniName) == 0) continue;
+            if (Reach.EnemyMissilesLeft(unit) > 0)
+            {
+                spentSince.Remove(unit);
+                continue;
+            }
+            if (!spentSince.TryGetValue(unit, out double since)) spentSince[unit] = Now;
+            else if (Now - since >= after)
+            {
+                spentSince.Remove(unit);
+                unit.RearmAll();
+                Entry.Log.LogInfo($"{unit.Name.Value} rearmed at {Clock(Elapsed)}: {Reach.EnemyMissilesLeft(unit)} anti-ship missile(s)");
+            }
+        }
+    }
+
     int ChestTier => Escorts.TierFor((int)(Elapsed / Script.PhaseSeconds));
 
     /// <summary>Send a convoy or SAG now: at its minute, or from the test panel.</summary>
@@ -667,7 +714,7 @@ public class Director : MonoBehaviour
         if (run?.Ship == null) return;
         // As with a boss, it comes regardless, but armed only if the salvo limit has room for it.
         int salvo = piece.SalvoAt(lastEdgeNm);
-        bool armed = !pressure.Breather && plan.MissilesAllowed(piece.Hulls.Concat(piece.Escorts), run, InFinale) && committed + salvo <= salvoLimit;
+        bool armed = !pressure.Breather && plan.MissilesAllowed(piece.Hulls.Concat(piece.Escorts), run, Eased) && committed + salvo <= salvoLimit;
         if (armed) committed += salvo;
         try { setPieces.Launch(piece, run.Ship, run, armed ? Defence.Score(run) : 0f); }
         catch (Exception e) { Entry.Log.LogError($"Set piece {piece.Name} failed: {e}"); }

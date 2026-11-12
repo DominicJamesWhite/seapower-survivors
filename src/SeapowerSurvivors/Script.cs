@@ -240,10 +240,11 @@ static class Script
     /// <summary>
     /// The AI stops firing once the missiles in the air at a ship add up to its
     /// MissilesToSaturate (see CombatHooks.EnemyKeepsFiring). That limit starts
-    /// to rise this many game seconds in, reaching this many times itself by the
+    /// to rise some way into the run (Difficulty.SaturationFromSeconds: from
+    /// minute 8 at the first difficulty), reaching this many times itself by the
     /// final assault, which has no limit at all.
     /// </summary>
-    public const float SaturationFromSeconds = 480f, SaturationLate = 2.5f;
+    public const float SaturationLate = 2.5f;
     internal static bool IsWaiting(string type) => ShortFiringRangeNm.ContainsKey(type);
     /// <summary>Whether this hull, spawned at the edge of this reach, starts too far out to fire yet.</summary>
     internal static bool Pending(string type, float reachNm) =>

@@ -23,10 +23,14 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
 
     public string Bank { get; private set; }
     public string Earned { get; private set; }
+    /// <summary>A rank of the chosen navy for each difficulty, over the areas as the navies are over the flagships.</summary>
+    public List<DifficultyTab> Difficulties { get; private set; }
     public List<AreaCard> Areas { get; private set; }
     public string AreaName { get; private set; }
     public string AreaBlurb { get; private set; }
-    public string AreaRecord { get; private set; }
+    /// <summary>The run that set the chosen area's high score; null if it has none.</summary>
+    public RecordStrip AreaRecord { get; private set; }
+    public Visibility AreaRecordVisibility => AreaRecord != null ? Visibility.Visible : Visibility.Collapsed;
     /// <summary>A flag for each navy; the flagships and escorts listed are the chosen one's.</summary>
     public List<NavyTab> Navies { get; private set; }
     public List<ShipRow> Flagships { get; private set; }
@@ -162,10 +166,18 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
         Bank = $"{profile.Bank:N0} XP to spend";
         Earned = $"{profile.Earned:N0} XP earned over {profile.Runs} run{(profile.Runs == 1 ? "" : "s")}";
 
+        var difficulty = Difficulty.At(profile.Difficulty);
+        Difficulties = Difficulty.All.Select(d => new DifficultyTab(d, Ranks.Of(d, SeapowerSurvivors.Navies.Of(flagship)), d == difficulty, () =>
+        {
+            profile.SetDifficulty(d.Index);
+            Refresh();
+        })).ToList();
+
         Areas = SeapowerSurvivors.Areas.All.Select(a => new AreaCard(a, a == area, profile.BestScore(a.Id), () => Choose(a, flagship))).ToList();
         AreaName = area.Name;
         AreaBlurb = area.Blurb;
-        AreaRecord = Record(profile.BestScore(area.Id));
+        var best = profile.BestScore(area.Id);
+        AreaRecord = best != null ? new RecordStrip(best) : null;
 
         var navy = SeapowerSurvivors.Navies.Of(flagship);
         lastFlagship[navy.Id] = flagship.Type;
@@ -195,20 +207,11 @@ public sealed class SurvivorsScreen : Observable, IMenuSystemPage
 
         foreach (var name in new[]
                  {
-                     nameof(Bank), nameof(Earned), nameof(Areas), nameof(AreaName), nameof(AreaBlurb), nameof(AreaRecord),
+                     nameof(Bank), nameof(Earned), nameof(Difficulties), nameof(Areas), nameof(AreaName), nameof(AreaBlurb), nameof(AreaRecord), nameof(AreaRecordVisibility),
                      nameof(Navies), nameof(Flagships), nameof(Escorts), nameof(FleetSummary), nameof(Bonuses), nameof(RefundText),
                      nameof(EnsignSlots), nameof(EnsignSummary), nameof(EnsignBudget), nameof(EnsignPips), nameof(EnsignCards),
                  })
             Changed(name);
-    }
-
-    /// <summary>Under the chosen area's briefing: the fleet that set its high score. Nothing if it has none.</summary>
-    static string Record(HighScore best)
-    {
-        if (best == null) return "";
-        string ship = Launcher.Flagships.FirstOrDefault(s => s.Type == best.Flagship)?.Name ?? best.Flagship;
-        static string Listed(List<string> names) => names.Count == 0 ? "None" : string.Join(", ", names);
-        return $"High score fleet\nFlagship: {ship}\nEscorts: {Listed(best.Escorts)}\nEnsigns: {Listed(best.Ensigns)}";
     }
 
     /// <summary>The line under the escort list: what sails, in the numbers it will sail in.</summary>
@@ -326,6 +329,118 @@ public sealed class AreaCard
         return UnityEngine.ImageConversion.LoadImage(texture, System.IO.File.ReadAllBytes(path), markNonReadable: true)
             ? new TextureSource(texture)
             : null;
+    }
+}
+
+/// <summary>
+/// A difficulty to play at: the insignia of its rank in the navy sailed for,
+/// whether it is the one chosen, and for the tooltip the rank and what choosing it does.
+/// </summary>
+public sealed class DifficultyTab
+{
+    public string Name { get; }
+    public Geometry Gaps { get; }
+    public Geometry Stars { get; }
+    public Geometry Weave { get; }
+    public List<string> Effects { get; }
+    public bool Selected { get; }
+    public ICommand Command { get; }
+
+    internal DifficultyTab(Difficulty difficulty, Rank rank, bool chosen, Action choose)
+    {
+        Name = rank.Name;
+        Gaps = Shape(rank.Insignia.Gaps);
+        Stars = Shape(rank.Insignia.Stars);
+        Weave = Shape(rank.Insignia.Weave);
+        Effects = difficulty.Effects();
+        Selected = chosen;
+        Command = new DelegateCommand(_ => choose());
+    }
+
+    internal static Geometry Shape(string path) => string.IsNullOrWhiteSpace(path) ? null : Geometry.Parse(path);
+}
+
+/// <summary>
+/// Under the chosen area's briefing, the run that set its high score: the
+/// score, the rank it was set at as that navy's insignia, the fleet it started
+/// with as the game's side profiles, and the ensigns it flew.
+/// </summary>
+public sealed class RecordStrip
+{
+    public string Score { get; }
+    public string Name { get; }
+    public Geometry Gaps { get; }
+    public Geometry Stars { get; }
+    public Geometry Weave { get; }
+    /// <summary>The flagship, drawn larger, then the starting escorts and flights.</summary>
+    public List<RecordShip> Ships { get; }
+    public List<EnsignSlot> Ensigns { get; }
+
+    internal RecordStrip(HighScore best)
+    {
+        var navy = Navies.Of(best.Flagship);
+        var rank = Ranks.Of(Difficulty.At(best.Difficulty), navy);
+        Score = best.Score.ToString("N0");
+        Name = rank.Name;
+        Gaps = DifficultyTab.Shape(rank.Insignia.Gaps);
+        Stars = DifficultyTab.Shape(rank.Insignia.Stars);
+        Weave = DifficultyTab.Shape(rank.Insignia.Weave);
+
+        string flagship = Launcher.Flagships.FirstOrDefault(s => s.Type == best.Flagship)?.Name ?? best.Flagship;
+        Ships = new List<RecordShip> { new RecordShip(flagship, best.Flagship, flagship: true) };
+        Ships.AddRange(best.Escorts.Select(shown => new RecordShip(shown, TypeOf(shown, navy), flagship: false)));
+        Ensigns = best.Ensigns.Select(name => SeapowerSurvivors.Ensigns.All.FirstOrDefault(e => e.Name == name))
+            .Where(e => e != null).Select(e => new EnsignSlot(e)).ToList();
+    }
+
+    /// <summary>
+    /// A score keeps its escorts as they were shown, "Knox ×2", so the type is
+    /// found by the name: in the flagship's navy first, then in any. Null for a
+    /// name no longer in the mod, which is shown without a profile.
+    /// </summary>
+    static string TypeOf(string shown, Navy navy)
+    {
+        int times = shown.LastIndexOf(" ×", StringComparison.Ordinal);
+        string name = times > 0 ? shown.Substring(0, times) : shown;
+        return new[] { navy }.Concat(Navies.All).SelectMany(n => n.Pool).FirstOrDefault(e => e.Name == name)?.Type;
+    }
+}
+
+/// <summary>A ship or flight on the record strip: the game's side profile of it, if it has one, over its name.</summary>
+public sealed class RecordShip
+{
+    // The game draws a profile 82 by 36 in its own lists; the flagship is half as large again.
+    const double ProfileWidth = 82, ProfileHeight = 36, FlagshipScale = 1.5;
+
+    public string Name { get; }
+    public ImageSource Art { get; }
+    public Visibility ArtVisibility => Art != null ? Visibility.Visible : Visibility.Collapsed;
+    public double Width { get; }
+    public double Height { get; }
+
+    internal RecordShip(string name, string type, bool flagship)
+    {
+        Name = name;
+        Art = ProfileOf(type);
+        Width = ProfileWidth * (flagship ? FlagshipScale : 1);
+        Height = ProfileHeight * (flagship ? FlagshipScale : 1);
+    }
+
+    /// <summary>The picture the game's unit lists show, found as its IniToProfileConverter finds it, so both share the loader's cache.</summary>
+    static ImageSource ProfileOf(string type)
+    {
+        if (string.IsNullOrEmpty(type)) return null;
+        try
+        {
+            if (!Singleton<ResourceLoader>.InstanceExists(false)) return null;
+            string name = type.ToLowerInvariant().Replace("/", "_");
+            return Singleton<ResourceLoader>.Instance.getNoesisTextureSourceResource($"ui/profiles/{name}.png", suppressError: true, preMultipliedAlpha: true);
+        }
+        catch (Exception e)
+        {
+            Entry.Log.LogWarning($"No profile for {type}: {e.Message}");
+            return null;
+        }
     }
 }
 

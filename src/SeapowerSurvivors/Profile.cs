@@ -16,11 +16,13 @@ sealed class HighScore
     /// <summary>The starting escorts and flights, as shown: "Gearing FRAM II destroyer ×5".</summary>
     public List<string> Escorts = new List<string>();
     public List<string> Ensigns = new List<string>();
+    /// <summary>The difficulty it was set at, by its place in Difficulty.All. Its factor is already in the score.</summary>
+    public int Difficulty;
 
     const char ListSeparator = ';';
 
     internal string Format(string areaId) =>
-        string.Join("|", areaId, Score, Flagship, string.Join(ListSeparator.ToString(), Escorts), string.Join(ListSeparator.ToString(), Ensigns));
+        string.Join("|", areaId, Score, Flagship, string.Join(ListSeparator.ToString(), Escorts.Select(Escape)), string.Join(ListSeparator.ToString(), Ensigns.Select(Escape)), Difficulty);
 
     /// <summary>Reads one saved entry. False if it is not whole, so one bad entry cannot lose the profile.</summary>
     internal static bool Parse(string entry, out string areaId, out HighScore score)
@@ -28,13 +30,24 @@ sealed class HighScore
         var parts = entry.Split('|');
         areaId = null;
         score = null;
-        if (parts.Length != 5 || !int.TryParse(parts[1], out int points)) return false;
+        // A score saved before there were difficulties has no sixth part: it was set at the first.
+        if (parts.Length < 5 || parts.Length > 6 || !int.TryParse(parts[1], out int points)) return false;
+        int difficulty = 0;
+        if (parts.Length == 6 && !int.TryParse(parts[5], out difficulty)) return false;
         areaId = parts[0].Trim();
-        score = new HighScore { Score = points, Flagship = parts[2], Escorts = Names(parts[3]), Ensigns = Names(parts[4]) };
+        score = new HighScore { Score = points, Flagship = parts[2], Escorts = Names(parts[3]), Ensigns = Names(parts[4]), Difficulty = difficulty };
         return true;
     }
 
-    static List<string> Names(string list) => list.Split(new[] { ListSeparator }, StringSplitOptions.RemoveEmptyEntries).ToList();
+    static List<string> Names(string list) => list.Split(new[] { ListSeparator }, StringSplitOptions.RemoveEmptyEntries).Select(Uri.UnescapeDataString).ToList();
+
+    /// <summary>
+    /// A name with the characters the profile splits on written as %2C and the
+    /// like. "Leander frigate, Exocet" once went in as it was: its comma cut the
+    /// entry in two on the next load, and the area lost its high score.
+    /// </summary>
+    static string Escape(string name) =>
+        name.Replace("%", "%25").Replace(",", "%2C").Replace("|", "%7C").Replace(";", "%3B").Replace("=", "%3D");
 }
 
 /// <summary>
@@ -70,6 +83,15 @@ sealed class Profile
     /// <summary>The area and flagship last chosen, by id and type, so the Survivors screen opens as it was left. Empty for the defaults.</summary>
     internal string AreaId { get; private set; } = "";
     internal string FlagshipType { get; private set; } = "";
+    /// <summary>The difficulty last chosen, by its place in Difficulty.All.</summary>
+    internal int Difficulty { get; private set; }
+
+    internal void SetDifficulty(int index)
+    {
+        if (Difficulty == index) return;
+        Difficulty = index;
+        Save();
+    }
     /// <summary>Where the player has placed starting ships, by store id: nautical miles to starboard of the flagship and ahead of it.</summary>
     readonly Dictionary<string, (float right, float ahead)> stations = new Dictionary<string, (float, float)>();
     /// <summary>Stations swing with the flagship rather than hold their compass bearing from it.</summary>
@@ -258,6 +280,7 @@ sealed class Profile
         stations.Clear();
         scores.Clear();
         StationsTurn = false;
+        Difficulty = 0;
         AreaId = FlagshipType = "";
         Save();
     }
@@ -288,6 +311,7 @@ sealed class Profile
                         break;
                     case "Area": profile.AreaId = value; break;
                     case "Flagship": profile.FlagshipType = value; break;
+                    case "Difficulty": int.TryParse(value, out int difficulty); profile.Difficulty = SeapowerSurvivors.Difficulty.At(difficulty).Index; break;
                     case "StationsTurn": profile.StationsTurn = value == "True"; break;
                     case "Stations":
                         foreach (var entry in value.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries))
@@ -349,6 +373,7 @@ sealed class Profile
                 $"SpentOnRanks={spentOnRanks}",
                 $"Area={AreaId}",
                 $"Flagship={FlagshipType}",
+                $"Difficulty={Difficulty}",
                 $"StationsTurn={StationsTurn}",
                 $"Stations={string.Join(",", stations.OrderBy(s => s.Key).Select(s => string.Format(CultureInfo.InvariantCulture, "{0}|{1:0.0}|{2:0.0}", s.Key, s.Value.right, s.Value.ahead)))}",
                 $"Ashore={string.Join(",", ashore.OrderBy(id => id))}",

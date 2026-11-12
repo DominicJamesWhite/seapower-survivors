@@ -151,6 +151,18 @@
                 </Grid>
             </Button>
         </DataTemplate>
+
+        <!-- A rank's insignia on a shoulder board lying on its side: black with gold for every navy. Bound to anything with Gaps, Weave and Stars. -->
+        <DataTemplate x:Key="Board">
+            <Canvas Width="84" Height="26">
+                <Path Data="M0,0 L77,0 L84,6 L84,20 L77,26 L0,26 Z" Fill="#FF0E1013" Stroke="#FFBFA35A" StrokeThickness="0.75"/>
+                <Path Data="{Binding Gaps}" Fill="#FFBFA35A"/>
+                <Path Data="{Binding Weave}" Stroke="#FFBFA35A" StrokeThickness="0.75" Opacity="0.6"/>
+                <!-- Edged dark, so a star on a gap keeps its shape -->
+                <Path Data="{Binding Stars}" Fill="#FFD8BC6A" Stroke="#FF0E1013" StrokeThickness="0.6"/>
+                <Ellipse Canvas.Left="76" Canvas.Top="11" Width="4" Height="4" Fill="#FFD8BC6A" Stroke="#FF0E1013" StrokeThickness="0.75"/>
+            </Canvas>
+        </DataTemplate>
     </Grid.Resources>
 
     <!-- The menu scales pages by the screen's height, so the width left at 1080p is narrower on a 16:10 screen than at 16:9 -->
@@ -239,11 +251,42 @@
                 <ColumnDefinition Width="3.2*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Location: a card for each area, then the chosen one's briefing -->
+            <!-- Location: the difficulty, a card for each area, then the chosen one's briefing -->
             <Border Style="{StaticResource Pane}">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel>
-                        <TextBlock Text="Location" Style="{StaticResource Heading}"/>
+                        <!-- The difficulties: a rank each of the navy sailed for, shown by its insignia on a shoulder board, over the
+                             areas as the navies are over the flagships. The one chosen is filled red, as a selected row is. What a
+                             rank does is its tooltip, the game's own, held open while the pointer stays. Black with gold for every navy. -->
+                        <ItemsControl ItemsSource="{Binding Difficulties}" Margin="0,0,-6,8">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource SelectableRow}" Command="{Binding Command}" Margin="0,0,6,0" Height="44"
+                                            ToolTipService.InitialShowDelay="150" ToolTipService.ShowDuration="60000">
+                                        <Button.ToolTip>
+                                            <ToolTip>
+                                                <!-- The rank, then a line for each thing it changes from the first rank -->
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Name}" Style="{StaticResource Name}"/>
+                                                    <ItemsControl ItemsSource="{Binding Effects}" Margin="0,4,0,0">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <TextBlock Text="{Binding}" FontSize="12" Foreground="{DynamicResource Brush.Foreground.Highlight}" Margin="0,2,0,0"/>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </ToolTip>
+                                        </Button.ToolTip>
+                                        <ContentControl Content="{Binding}" ContentTemplate="{StaticResource Board}" Focusable="False" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="Location" Style="{StaticResource Heading}" Margin="0,6,0,4"/>
                         <Border Style="{StaticResource Rule}"/>
                         <ItemsControl ItemsSource="{Binding Areas}" Margin="0,0,-10,0">
                             <ItemsControl.ItemsPanel>
@@ -293,7 +336,57 @@
                         </ItemsControl>
                         <TextBlock Text="{Binding AreaName}" FontSize="16" Foreground="{DynamicResource Brush.Foreground.Highlight}" Margin="0,8,0,4"/>
                         <TextBlock Text="{Binding AreaBlurb}" FontSize="12" Foreground="{DynamicResource Brush.Foreground.Highlight}" TextWrapping="Wrap" LineHeight="17"/>
-                        <TextBlock Text="{Binding AreaRecord}" FontSize="12" Foreground="{DynamicResource Brush.Foreground.Highlight}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                        <!-- The run that set the area's high score, in one band: the score over the rank it was set at, the fleet it
+                             started with as the game's side profiles, flagship first and larger, and the ensigns it flew. -->
+                        <StackPanel Visibility="{Binding AreaRecordVisibility}" Margin="0,14,0,0">
+                            <TextBlock Text="High Score" Style="{StaticResource Heading}"/>
+                            <Border Style="{StaticResource Rule}" Margin="0,0,0,8"/>
+                            <Border DataContext="{Binding AreaRecord}" Background="{DynamicResource Brush.ListBox.Background}" Padding="12,10">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,18,0">
+                                        <TextBlock Text="{Binding Score}" FontSize="20" Foreground="{DynamicResource Brush.Foreground.Highlight}"/>
+                                        <ContentControl Content="{Binding}" ContentTemplate="{StaticResource Board}" Focusable="False" HorizontalAlignment="Left" Margin="0,6,0,4"/>
+                                        <TextBlock Text="{Binding Name}" Style="{StaticResource Note}"/>
+                                    </StackPanel>
+                                    <ItemsControl Grid.Column="1" ItemsSource="{Binding Ships}" VerticalAlignment="Center">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <!-- Bottom-aligned, so the flagship and the smaller escorts sit on one waterline -->
+                                                <StackPanel Width="{Binding Width}" VerticalAlignment="Bottom" Margin="0,2,12,2">
+                                                    <Image Source="{Binding Art}" Width="{Binding Width}" Height="{Binding Height}" Stretch="Uniform" Visibility="{Binding ArtVisibility}"/>
+                                                    <TextBlock Text="{Binding Name}" FontSize="11" Foreground="{DynamicResource Brush.Foreground.Highlight}" TextWrapping="Wrap" TextAlignment="Center" Height="28" Margin="0,3,0,0"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <ItemsControl Grid.Column="2" ItemsSource="{Binding Ensigns}" VerticalAlignment="Center" Margin="6,0,0,0">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Width="36" Height="24" Margin="6,0,0,0" BorderBrush="{DynamicResource Brush.Border.Normal}" BorderThickness="1" Background="#01000000">
+                                                    <Border.ToolTip>
+                                                        <ToolTip>
+                                                            <TextBlock Text="{Binding Name}" Style="{StaticResource Name}"/>
+                                                        </ToolTip>
+                                                    </Border.ToolTip>
+                                                    <Image Source="{Binding Flag}" Stretch="Fill"/>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
             </Border>

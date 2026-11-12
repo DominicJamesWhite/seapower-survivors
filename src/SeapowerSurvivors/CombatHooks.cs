@@ -56,6 +56,8 @@ static class CombatHooks
             DamageLog.Sunk(__instance);
             var run = Run.Current;
             float xp = Progression.ForUnit(__instance);
+            // A tougher hull takes longer to sink, so it pays as much more: levels come at the pace they did.
+            if (run != null && !__instance.IsAirUnit) xp *= run.Difficulty.Hull;
             if (run != null)
             {
                 run.Kills++;

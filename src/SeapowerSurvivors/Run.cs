@@ -52,7 +52,9 @@ sealed class Run
     internal string AreaId;
     /// <summary>The escorts and flights the run started with, as a high score shows them.</summary>
     internal List<string> StartingEscorts = new List<string>();
-    internal int FinalScore => Won ? Score * Progression.WinScoreFactor : Score;
+    /// <summary>How hard the run is, fixed when it starts: the one chosen on the Survivors screen.</summary>
+    internal readonly Difficulty Difficulty;
+    internal int FinalScore => (Won ? Score * Progression.WinScoreFactor : Score) * Difficulty.ScoreFactor;
     /// <summary>True for a real run, whose XP goes to the profile's bank; false for one started from the test panel.</summary>
     internal bool Counts;
     internal bool Banked;
@@ -84,6 +86,7 @@ sealed class Run
         XpFactor = 1f + Store.GrowthPerRank * profile.RankOf(Store.Growth);
         Luck = profile.RankOf(Store.Luck);
         Hoisted = profile.HoistedEnsigns();
+        Difficulty = Difficulty.At(profile.Difficulty);
         if (Hoisted.Contains(Ensigns.FreeCards)) PendingLevels = Ensigns.BonusCards;
         if (Hoisted.Contains(Ensigns.HitProof)) HitsToIgnore = 1;
         if (Hoisted.Contains(Ensigns.MoreChoice))
